@@ -1,0 +1,41 @@
+{
+  "name": "blog-api",
+  "author": "nhat.duong@asnet.com.vn",
+  "version": "1.0.0",
+  "description": "RESTful API for a personal blogging platform",
+  "type": "module",
+  "main": "dist/app.js",
+  "scripts": {
+    "dev": "nodemon --watch 'src/**/*.ts' --exec tsx src/app.ts",
+    "build": "tsc",
+    "start": "node dist/app.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.6.2",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^20.4.3",
+    "@commitlint/config-conventional": "^20.4.3",
+    "@eslint/js": "^10.0.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.6",
+    "@types/express-serve-static-core": "^5.1.1",
+    "@types/node": "^25.3.3",
+    "eslint": "^10.0.2",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.5",
+    "husky": "^9.1.7",
+    "nodemon": "^3.1.14",
+    "prettier": "^3.8.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.1"
+  }
+}
