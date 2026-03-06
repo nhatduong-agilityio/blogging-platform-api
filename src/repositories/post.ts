@@ -131,3 +131,17 @@ export function updatePost(
 
   return findPostById(id);
 }
+
+/**
+ * Deletes a post by its ID.
+ * @param {number} id The ID of the post to delete.
+ * @returns {boolean} True if the post was successfully deleted, false otherwise.
+ */
+export function deletePost(id: number): boolean {
+  const db = getDb();
+  const stmt = db.prepare<[number]>('DELETE FROM posts WHERE id = ?');
+
+  const result = stmt.run(id);
+
+  return result.changes > 0;
+}

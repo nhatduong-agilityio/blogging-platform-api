@@ -121,3 +121,25 @@ export function updatePost(
     next(error);
   }
 }
+
+/**
+ * Deletes a post by its ID.
+ * @param {Request} req - The Express.js request object.
+ * @param {Response} res - The Express.js response object.
+ * @param {NextFunction} next - The Express.js next function, which is called if an error occurs.
+ * @throws {AppError} If the post cannot be found.
+ */
+export function deletePost(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void {
+  try {
+    const id = parseIdParam(req);
+    postService.deletePost(id);
+
+    sendSuccessResponse(res, null, RESPONSE_STATUS_CODE.NO_CONTENT);
+  } catch (error) {
+    next(error);
+  }
+}
