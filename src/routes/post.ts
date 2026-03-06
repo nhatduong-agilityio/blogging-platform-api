@@ -2,6 +2,10 @@ import { Router } from 'express';
 
 // Types
 import type { PostController } from '../controllers/post.js';
+import type { Database as DatabaseType } from 'better-sqlite3';
+
+// Middlewares
+import { idempotency } from '../middlewares/idempotency.js';
 
 /**
  * Creates a new Router instance with the given PostController and registers routes for:
@@ -13,12 +17,19 @@ import type { PostController } from '../controllers/post.js';
  * @param {PostController} controller - The PostController to register routes with.
  * @returns {Router} - The Router instance with the registered routes.
  */
-export function createPostRoutes(controller: PostController): Router {
+export function createPostRoutes(
+  controller: PostController,
+  db: DatabaseType
+): Router {
   const router = Router();
 
   router.get('/', controller.getAllPosts);
   router.get('/:id', controller.getPostById);
-  router.post('/', controller.createPost);
+
+  // Write routes — rate limited + idempotency on POST
+  // PUT and DELETE are naturally idempotent by HTTP semantics,
+  // so idempotency middleware is only needed on POST (create).
+  router.post('/', idempotency(db), controller.createPost);
   router.put('/:id', controller.updatePost);
   router.delete('/:id', controller.deletePost);
 

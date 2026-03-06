@@ -21,6 +21,9 @@ import { createPostRoutes } from './routes/post.js';
 // App
 import { createApp } from './app.js';
 
+// Middlewares
+import { purgeExpiredKeys } from './middlewares/idempotency.js';
+
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 
 // Initialize the database connection before starting the server
@@ -30,7 +33,7 @@ const db = initializeDb();
 const postRepository = new PostRepository(db);
 const postService = new PostService(postRepository);
 const postController = new PostController(postService);
-const postRoutes = createPostRoutes(postController);
+const postRoutes = createPostRoutes(postController, db);
 
 // Register routes
 const app = createApp([
@@ -39,6 +42,13 @@ const app = createApp([
     router: postRoutes
   }
 ]);
+
+// Purge idempotency keys that have passed their 24-hour TTL.
+// Runs once on boot; a production app could also use setInterval.
+const purged = purgeExpiredKeys(db);
+if (purged > 0) {
+  console.info(`🧹 Purged ${purged} expired idempotency key(s)`);
+}
 
 // Start the server
 const server = app.listen(PORT, () => {

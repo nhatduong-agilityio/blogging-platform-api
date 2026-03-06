@@ -1,8 +1,10 @@
 import Database from 'better-sqlite3';
-import type { Database as DatabaseType } from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+
+// Types
+import type { Database as DatabaseType } from 'better-sqlite3';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -37,7 +39,19 @@ function runMigrations(database: DatabaseType): void {
       tags TEXT NOT NULL DEFAULT '[]',
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )`);
+    );
+
+    -- Stores idempotency keys so duplicate POST requests (e.g. after
+    -- a network error) return the original response instead of creating
+    -- a second record.
+    -- TTL is enforced at read time; a periodic cleanup removes expired rows.
+    CREATE TABLE IF NOT EXISTS idempotency_keys (
+      key          TEXT     PRIMARY KEY,
+      status_code  INTEGER  NOT NULL,
+      response     TEXT     NOT NULL,  -- JSON-serialised response body
+      created_at   INTEGER  NOT NULL   -- Unix ms timestamp
+    );
+  `);
 }
 
 /**
