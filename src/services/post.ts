@@ -71,3 +71,16 @@ export function updatePost(id: number, payload: UpdatePostInput): Post {
 
   return updatedPost;
 }
+
+/**
+ * Deletes a post by its ID.
+ * @param {number} id The ID of the post to delete.
+ * @throws {AppError} If the post cannot be found.
+ */
+export function deletePost(id: number): void {
+  const deleted = postRepository.deletePost(id);
+
+  if (!deleted) {
+    throw AppError.notFound(ERROR_MESSAGES.POST_NOT_FOUND);
+  }
+}
