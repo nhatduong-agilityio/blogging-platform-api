@@ -5,5 +5,7 @@ export const ERROR_MESSAGES = {
   INTERNAL_SERVER_ERROR: 'Internal server error',
 
   // Post related messages
-  POST_CREATION_FAILED: 'Failed to create post'
+  POST_CREATION_FAILED: 'Failed to create post',
+  POST_NOT_FOUND: 'Post not found',
+  INVALID_POST_ID: 'Invalid post ID'
 };

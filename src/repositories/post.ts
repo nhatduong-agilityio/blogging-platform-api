@@ -26,6 +26,36 @@ export function findPostById(id: number): Post | undefined {
 }
 
 /**
+ * Finds all posts that match the given term in title, content, or category.
+ * If no term is given, returns all posts.
+ * @param {string} [term] - Optional search term to filter the posts by.
+ * @returns {Post[]} An array of posts that match the given term, or all posts if no term is given.
+ */
+export function findAllPosts(term?: string): Post[] {
+  const db = getDb();
+
+  if (term) {
+    const likeTerm = `%${term}%`;
+    const stmt = db.prepare<[string, string, string], PostRow>(`
+      SELECT * FROM posts
+      WHERE title LIKE ? COLLATE NOCASE
+      OR content LIKE ? COLLATE NOCASE
+      OR category LIKE ? COLLATE NOCASE
+      ORDER BY created_at DESC`);
+
+    const rows = stmt.all(likeTerm, likeTerm, likeTerm);
+    return rows.map(mapPostRowToPost);
+  }
+
+  const stmt = db.prepare<[], PostRow>(
+    'SELECT * FROM posts ORDER BY created_at DESC'
+  );
+
+  const rows = stmt.all();
+  return rows.map(mapPostRowToPost);
+}
+
+/**
  * Creates a new post with the given payload and returns the created post.
  * @param {CreatePostInput} payload The payload to create the post with.
  * @returns {Post} The created post.
