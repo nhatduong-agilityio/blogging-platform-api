@@ -6,5 +6,7 @@ import * as postController from '../controllers/post.js';
 const router = Router();
 
 router.post('/', postController.createPost);
+router.get('/', postController.getAllPosts);
+router.get('/:id', postController.getPostById);
 
 export default router;
