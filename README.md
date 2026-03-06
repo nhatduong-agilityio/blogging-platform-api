@@ -1,103 +1,495 @@
-# nodejs-training
+# 📝 Blog API
 
-## Getting started
+A RESTful API for a personal blogging platform with full CRUD operations and search.
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin https://gitlab.asoft-python.com/nhat.duong/nodejs-training.git
-git branch -M main
-git push -uf origin main
-```
-
-## Integrate with your tools
-
-- [ ] [Set up project integrations](https://gitlab.asoft-python.com/nhat.duong/nodejs-training/-/settings/integrations)
-
-## Collaborate with your team
-
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+Built with **TypeScript 5**, **Express 5**, **SQLite** (`better-sqlite3`), validated by **Zod** — managed by **pnpm**.
 
 ---
 
-# Editing this README
+## Table of Contents
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+- [📝 Blog API](#-blog-api)
+  - [Table of Contents](#table-of-contents)
+  - [Features](#features)
+  - [Project Structure](#project-structure)
+  - [Requirements](#requirements)
+  - [Installation](#installation)
+  - [Environment Variables](#environment-variables)
+  - [API Reference](#api-reference)
+    - [Get All Posts](#get-all-posts)
+    - [Get Post by ID](#get-post-by-id)
+    - [Create Post](#create-post)
+    - [Update Post](#update-post)
+    - [Delete Post](#delete-post)
+  - [Data Model](#data-model)
+  - [Architecture \& Design](#architecture--design)
+  - [TypeScript Design](#typescript-design)
+    - [Generic Base Classes](#generic-base-classes)
+    - [Generic Interfaces](#generic-interfaces)
+    - [Interface vs Abstract Class](#interface-vs-abstract-class)
+    - [`createApp(routes: RouteConfig[])` factory](#createapproutes-routeconfig-factory)
+  - [Error Handling](#error-handling)
+  - [Code Quality](#code-quality)
+  - [Commit Convention](#commit-convention)
 
-## Suggestions for a good README
+---
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+## Features
 
-## Name
+| Endpoint     | Method   | Description                              |
+| ------------ | -------- | ---------------------------------------- |
+| `/posts`     | `GET`    | Get all posts (supports `?term=` search) |
+| `/posts/:id` | `GET`    | Get a single post by ID                  |
+| `/posts`     | `POST`   | Create a new post                        |
+| `/posts/:id` | `PUT`    | Update an existing post                  |
+| `/posts/:id` | `DELETE` | Delete a post                            |
 
-Choose a self-explaining name for your project.
+---
 
-## Description
+## Project Structure
 
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+```text
+blog-api/
+├── src/
+│   ├── constants/
+│   │   ├── messages.ts         # Shared error/success message strings
+│   │   ├── route.ts            # Base route path constants
+│   │   └── status-code.ts      # HTTP status code constants
+│   ├── controllers/
+│   │   └── post.ts             # PostController — HTTP in/out only
+│   ├── database/
+│   │   └── connection.ts       # SQLite init, migrations, close
+│   ├── middlewares/
+│   │   ├── error-handler.ts    # Global error handler + 404 handler
+│   │   └── request-logger.ts   # Per-request logging (method, URL, status, ms)
+│   ├── repositories/
+│   │   ├── base.ts             # Abstract BaseRepository<T, Row, C, U>
+│   │   └── post.ts             # PostRepository — SQL queries for posts
+│   ├── routes/
+│   │   └── post.ts             # createPostRouter(controller) factory
+│   ├── schemas/
+│   │   └── post.ts             # Zod schemas: createPostSchema, updatePostSchema
+│   ├── services/
+│   │   ├── base.ts             # Abstract BaseService<T, C, U>
+│   │   └── post.ts             # PostService — business logic for posts
+│   ├── types/
+│   │   ├── api.ts              # ApiSuccessResponse, ApiErrorResponse, ApiResponse<T>
+│   │   ├── common.ts           # IRepository<T,C,U>, IService<T,C,U> generics
+│   │   └── post.ts             # Post, PostRow, IPostRepository, IPostService
+│   ├── utils/
+│   │   ├── app-error.ts        # AppError class with static factory methods
+│   │   ├── map.ts              # Row-to-entity mapper utilities
+│   │   ├── response.ts         # sendSuccess / sendError helpers
+│   │   └── zod.ts              # Zod error → field error map converter
+│   ├── app.ts                  # Express app factory: createApp(routes)
+│   └── server.ts               # Composition root — wires all dependencies
+├── data/
+│   └── blog.db                 # Auto-created SQLite file (gitignored)
+├── dist/                       # Compiled output (generated by pnpm build)
+├── .editorconfig
+├── .env
+├── .env.example
+├── .gitignore
+├── .husky/
+│   ├── pre-commit              # Runs lint + format check
+│   └── commit-msg              # Runs commitlint
+├── .prettierrc
+├── commitlint.config.js
+├── eslint.config.js
+├── nodemon.json
+├── package.json
+├── pnpm-lock.yaml
+├── pnpm-workspace.yaml
+├── README.md
+└── tsconfig.json
+```
 
-## Badges
+---
 
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+## Requirements
 
-## Visuals
+| Tool       | Version               |
+| ---------- | --------------------- |
+| Node.js    | ≥ 20.0.0              |
+| pnpm       | ≥ 8.0.0               |
+| TypeScript | ≥ 5.9 (devDependency) |
 
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+---
 
 ## Installation
 
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+```bash
+# Clone the repository
+git clone <repo-url>
+cd nodejs-training
 
-## Usage
+# Checkout to blogging-platform-api branch
+git checkout blogging-platform-api
 
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+# Install dependencies
+pnpm install
 
-## Support
+# Copy environment config
+cp .env.example .env
 
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+# Start development server (hot reload)
+pnpm dev
 
-## Roadmap
+# Build for production
+pnpm build
 
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+# Start production server
+pnpm start
+```
 
-## Contributing
+> `data/blog.db` is created automatically on first run.
 
-State if you are open to contributions and what your requirements are for accepting them.
+---
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+## Environment Variables
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+| Variable   | Default          | Description                                 |
+| ---------- | ---------------- | ------------------------------------------- |
+| `PORT`     | `3000`           | Server port                                 |
+| `NODE_ENV` | `development`    | Environment (`development` \| `production`) |
+| `DB_PATH`  | `./data/blog.db` | Path to the SQLite database file            |
 
-## Authors and acknowledgment
+---
 
-Show your appreciation to those who have contributed to the project.
+## API Reference
 
-## License
+### Get All Posts
 
-For open source projects, say how it is licensed.
+```
+GET /posts
+GET /posts?term=tech
+```
 
-## Project status
+Wildcard search on `title`, `content`, and `category` (case-insensitive). Omit `term` to return all posts.
 
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "title": "My First Blog Post",
+      "content": "This is the content of my first blog post.",
+      "category": "Technology",
+      "tags": ["Tech", "Programming"],
+      "createdAt": "2021-09-01T12:00:00.000Z",
+      "updatedAt": "2021-09-01T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+### Get Post by ID
+
+```
+GET /posts/:id
+```
+
+**Response `200`:** single post object (same shape as above)
+
+**Response `404`:**
+
+```json
+{
+  "success": false,
+  "status": "error",
+  "message": "Post not found"
+}
+```
+
+---
+
+### Create Post
+
+```
+POST /posts
+Content-Type: application/json
+```
+
+**Request body:**
+
+```json
+{
+  "title": "My First Blog Post",
+  "content": "This is the content of my first blog post.",
+  "category": "Technology",
+  "tags": ["Tech", "Programming"]
+}
+```
+
+| Field      | Type       | Rules                              |
+| ---------- | ---------- | ---------------------------------- |
+| `title`    | `string`   | Required, non-empty, max 255 chars |
+| `content`  | `string`   | Required, non-empty                |
+| `category` | `string`   | Required, non-empty, max 100 chars |
+| `tags`     | `string[]` | Optional array, defaults to `[]`   |
+
+**Response `201`:** created post object
+
+**Response `400`:**
+
+```json
+{
+  "success": false,
+  "status": "error",
+  "message": "Validation failed",
+  "errors": {
+    "title": ["Title is required"],
+    "content": ["Content cannot be empty"]
+  }
+}
+```
+
+---
+
+### Update Post
+
+```
+PUT /posts/:id
+Content-Type: application/json
+```
+
+Request body — same shape as create. All fields required.
+
+**Response `200`:** updated post object  
+**Response `400`:** validation errors  
+**Response `404`:** post not found
+
+---
+
+### Delete Post
+
+```
+DELETE /posts/:id
+```
+
+**Response `204`:** no content  
+**Response `404`:** post not found
+
+---
+
+## Data Model
+
+`data/blog.db` — SQLite schema:
+
+```sql
+CREATE TABLE posts (
+  id          INTEGER  PRIMARY KEY AUTOINCREMENT,
+  title       TEXT     NOT NULL,
+  content     TEXT     NOT NULL,
+  category    TEXT     NOT NULL,
+  tags        TEXT     NOT NULL DEFAULT '[]',  -- stored as JSON string
+  created_at  DATETIME NOT NULL,
+  updated_at  DATETIME NOT NULL
+);
+```
+
+**Domain entity shape (`Post`):**
+
+| Field       | Type       | Notes                                        |
+| ----------- | ---------- | -------------------------------------------- |
+| `id`        | `number`   | Auto-incremented; readonly after creation    |
+| `title`     | `string`   |                                              |
+| `content`   | `string`   |                                              |
+| `category`  | `string`   |                                              |
+| `tags`      | `string[]` | Serialised as JSON in SQLite, parsed on read |
+| `createdAt` | `string`   | ISO 8601; set on insert, never updated       |
+| `updatedAt` | `string`   | ISO 8601; refreshed on every mutation        |
+
+---
+
+## Architecture & Design
+
+The project follows a strict **3-layer architecture** with **manual dependency injection**:
+
+```
+HTTP Request
+     ↓
+ Controller    parse request, validate input, delegate to service, send response
+     ↓
+  Service      business logic, not-found guards, orchestration
+     ↓
+ Repository    SQL queries, row mapping, database access
+     ↓
+  SQLite DB
+```
+
+**Dependency flow — nothing crosses layer boundaries:**
+
+```
+server.ts  (composition root — the only file that calls `new`)
+    │
+    ├── initDb()                     → Database instance
+    ├── new PostRepository(db)       → IPostRepository
+    ├── new PostService(repository)  → IPostService
+    ├── new PostController(service)  → PostController
+    ├── createPostRouter(controller) → Router
+    └── createApp([{ path, router }])→ Express app
+```
+
+Adding a new resource (e.g. `User`) only requires wiring in `server.ts` — no other file needs to change.
+
+---
+
+## TypeScript Design
+
+### Generic Base Classes
+
+The core reusable layer uses two generic abstract classes that subclasses extend:
+
+**`BaseRepository<T, Row, C, U>`** — write `findById` and `delete` once:
+
+```typescript
+// PostRepository only needs to implement:
+//   mapRow(row: PostRow): Post
+//   findAll(term?)
+//   create(input)
+//   update(id, input)
+//
+// findById and delete are inherited from BaseRepository
+
+class PostRepository
+  extends BaseRepository<Post, PostRow, CreatePostDto, UpdatePostDto>
+  implements IPostRepository {
+    protected mapRow(row: PostRow): Post { ... }
+    findAll(term?: string): Post[] { ... }
+    create(input: CreatePostDto): Post { ... }
+    update(id: number, input: UpdatePostDto): Post | undefined { ... }
+  }
+```
+
+**`BaseService<T, C, U>`** — `getById` and `delete` with built-in 404 handling:
+
+```typescript
+// PostService only needs to implement:
+//   getAll, create, update
+//   get resourceName(): string  ← used in "Post not found" messages
+//
+// getById and delete (with AppError.notFound) are inherited
+
+class PostService
+  extends BaseService<Post, CreatePostDto, UpdatePostDto>
+  implements IPostService {
+    protected get resourceName() { return 'Post'; }
+    getAll(term?: string): Post[] { ... }
+    create(input: CreatePostDto): Post { ... }
+    update(id: number, input: UpdatePostDto): Post { ... }
+  }
+```
+
+### Generic Interfaces
+
+All type contracts are defined in `src/types/common.ts`:
+
+| Interface               | Definition                                      | Purpose                              |
+| ----------------------- | ----------------------------------------------- | ------------------------------------ |
+| `IRepository<T, C, U>`  | `findAll / findById / create / update / delete` | Contract every repository implements |
+| `IService<T, C, U>`     | `getAll / getById / create / update / delete`   | Contract every service implements    |
+| `ApiSuccessResponse<T>` | `{ success: true; data: T }`                    | Typed success envelope               |
+| `ApiErrorResponse`      | `{ success: false; status; message; errors? }`  | Typed error envelope                 |
+| `ApiResponse<T>`        | `ApiSuccessResponse<T> \| ApiErrorResponse`     | Union for any response               |
+
+### Interface vs Abstract Class
+
+| Used for                                               | Why                                                                                                          |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `IPostRepository`, `IPostService` — **interfaces**     | Define contracts only; no shared implementation; controller/service depend on these, not on concrete classes |
+| `BaseRepository`, `BaseService` — **abstract classes** | Share real implementation (`findById`, `delete`, `getById`, not-found guard) across all future resources     |
+
+### `createApp(routes: RouteConfig[])` factory
+
+`app.ts` accepts an array of `{ path, router }` pairs — it never imports any resource directly. This makes the app trivially testable and extensible:
+
+```typescript
+// server.ts — add new resources here only
+createApp([
+  { path: '/posts', router: createPostRouter(postController) },
+  { path: '/users', router: createUserRouter(userController) }, // future
+  { path: '/articles', router: createArticleRouter(articleController) } // future
+]);
+```
+
+---
+
+## Error Handling
+
+All errors follow a consistent JSON shape:
+
+```json
+{
+  "success": false,
+  "status": "error",
+  "message": "Human-readable description",
+  "errors": {
+    "fieldName": ["Validation message"]
+  }
+}
+```
+
+`errors` is only present on `400` validation failures.
+
+| Scenario                   | Status | Message                            |
+| -------------------------- | ------ | ---------------------------------- |
+| Post not found             | `404`  | `Post not found`                   |
+| Invalid ID param           | `400`  | `Invalid post ID`                  |
+| Missing required field     | `400`  | `Validation failed` + `errors` map |
+| Route not found            | `404`  | `Route METHOD /path not found`     |
+| Unhandled exception (dev)  | `500`  | Original error message             |
+| Unhandled exception (prod) | `500`  | `Internal server error`            |
+
+`AppError` static factory methods used throughout:
+
+```typescript
+AppError.notFound('Post'); // 404 Post not found
+AppError.badRequest('Validation failed', errors); // 400 with field errors
+AppError.internal('Failed to update post'); // 500
+```
+
+---
+
+## Code Quality
+
+| Tool                                       | Purpose                                             |
+| ------------------------------------------ | --------------------------------------------------- |
+| TypeScript `strict` + `NodeNext`           | Full type safety, ESM module resolution             |
+| `verbatimModuleSyntax`                     | Enforces `import type` for type-only imports        |
+| `erasableSyntaxOnly`                       | Disallows non-strippable syntax (enums, namespaces) |
+| ESLint (flat config) + `typescript-eslint` | Linting with type-aware rules                       |
+| Prettier                                   | Consistent formatting                               |
+| EditorConfig                               | Cross-editor whitespace/indent consistency          |
+| Husky                                      | Git hooks: pre-commit runs lint + format check      |
+| Commitlint                                 | Enforces Conventional Commits on commit messages    |
+
+```bash
+pnpm lint          # Check for lint errors
+pnpm lint:fix      # Auto-fix lint errors
+pnpm format        # Format all files
+pnpm format:check  # Check formatting without writing
+```
+
+---
+
+## Commit Convention
+
+Uses [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+feat: add search filter to GET /posts
+fix: handle missing category field
+refactor: extract base repository class
+docs: update API reference in README
+chore: update dependencies
+```
+
+**Allowed types:** `feat` | `fix` | `docs` | `style` | `refactor` | `test` | `chore` | `perf` | `ci` | `revert`
+
+Commitlint enforces this on every commit via the `commit-msg` Husky hook.
