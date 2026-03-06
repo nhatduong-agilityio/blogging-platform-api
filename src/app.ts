@@ -1,4 +1,8 @@
 import express from 'express';
+import postRoutes from './routes/post.js';
+
+// Constants
+import { API_PREFIX } from './constants/route.js';
 
 // Middlewares
 import { errorHandler, notFoundHandler } from './middlewares/error-handler.js';
@@ -12,9 +16,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(requestLogger);
 
 // Routes
-app.get('/', (req, res) => {
-  res.json({ status: 'ok' });
-});
+app.use(API_PREFIX, postRoutes);
 
 // Error Handlers and Not Found Handlers
 app.use(notFoundHandler);
