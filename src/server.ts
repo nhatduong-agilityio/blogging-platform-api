@@ -1,13 +1,46 @@
 import 'dotenv/config';
 
+// Constants
+import { API_PREFIX } from './constants/route.js';
+
+// Database
 import { initializeDb, closeDb } from './database/connection.js';
-import app from './app.js';
+
+// Repositories
+import { PostRepository } from './repositories/post.js';
+
+// Services
+import { PostService } from './services/post.js';
+
+// Controllers
+import { PostController } from './controllers/post.js';
+
+// Routes
+import { createPostRoutes } from './routes/post.js';
+
+// App
+import { createApp } from './app.js';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 
 // Initialize the database connection before starting the server
-initializeDb();
+const db = initializeDb();
 
+// Create repositories and services
+const postRepository = new PostRepository(db);
+const postService = new PostService(postRepository);
+const postController = new PostController(postService);
+const postRoutes = createPostRoutes(postController);
+
+// Register routes
+const app = createApp([
+  {
+    path: API_PREFIX,
+    router: postRoutes
+  }
+]);
+
+// Start the server
 const server = app.listen(PORT, () => {
   console.info(`Server is running on port ${PORT}`);
   console.info(`Environment: ${process.env.NODE_ENV}`);

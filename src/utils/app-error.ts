@@ -20,6 +20,8 @@ export class AppError extends Error {
     super(message);
     this.statusCode = statusCode;
     this.errors = errors ?? {};
+
+    // Create a stack trace for the error object to help with debugging
     Error.captureStackTrace(this, this.constructor);
   }
 
@@ -28,7 +30,7 @@ export class AppError extends Error {
    * @param {string} [message] - Optional error message. Defaults to "Resource not found".
    * @returns {AppError}
    */
-  static notFound(message: string = ERROR_MESSAGES.NOT_FOUND): AppError {
+  static notFound(message: string = ERROR_MESSAGES.NOT_FOUND()): AppError {
     return new AppError(message, RESPONSE_STATUS_CODE.NOT_FOUND);
   }
 

@@ -1,5 +1,6 @@
 export const ERROR_MESSAGES = {
-  NOT_FOUND: 'Resource not found',
+  NOT_FOUND: (resourceName: string = 'Resource'): string =>
+    `${resourceName} not found`,
   BAD_REQUEST: 'Invalid request body',
   FORBIDDEN: 'Insufficient permissions to access this resource',
   INTERNAL_SERVER_ERROR: 'Internal server error',

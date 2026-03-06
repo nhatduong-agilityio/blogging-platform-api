@@ -1,25 +1,35 @@
-import express from 'express';
-import postRoutes from './routes/post.js';
-
-// Constants
-import { API_PREFIX } from './constants/route.js';
+import express, { type Router, type Application } from 'express';
 
 // Middlewares
 import { errorHandler, notFoundHandler } from './middlewares/error-handler.js';
 import { requestLogger } from './middlewares/request-logger.js';
 
-const app = express();
+export interface RouteConfig {
+  path: string;
+  router: Router;
+}
 
-// Middleware to parse JSON bodies
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(requestLogger);
+/**
+ * Creates an express application with the given routes.
+ * @param {RouteConfig[]} routes - An array of route configurations.
+ * @returns {Application} - The created express application.
+ */
+export function createApp(routes: RouteConfig[]): Application {
+  const app = express();
 
-// Routes
-app.use(API_PREFIX, postRoutes);
+  // Middleware to parse JSON bodies
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+  app.use(requestLogger);
 
-// Error Handlers and Not Found Handlers
-app.use(notFoundHandler);
-app.use(errorHandler);
+  // Routes
+  routes.forEach(route => {
+    app.use(route.path, route.router);
+  });
 
-export default app;
+  // Error Handlers and Not Found Handlers
+  app.use(notFoundHandler);
+  app.use(errorHandler);
+
+  return app;
+}
