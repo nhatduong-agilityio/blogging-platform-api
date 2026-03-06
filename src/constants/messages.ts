@@ -7,5 +7,6 @@ export const ERROR_MESSAGES = {
   // Post related messages
   POST_CREATION_FAILED: 'Failed to create post',
   POST_NOT_FOUND: 'Post not found',
-  INVALID_POST_ID: 'Invalid post ID'
+  INVALID_POST_ID: 'Invalid post ID',
+  POST_UPDATE_FAILED: 'Failed to update post'
 };

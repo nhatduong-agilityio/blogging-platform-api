@@ -2,10 +2,12 @@
 import { ERROR_MESSAGES } from '../constants/messages.js';
 
 // Types
-import type { CreatePostInput, Post } from '../types/post.js';
+import type { CreatePostInput, Post, UpdatePostInput } from '../types/post.js';
 
 // Repositories
 import * as postRepository from '../repositories/post.js';
+
+// Utils
 import { AppError } from '../utils/app-error.js';
 
 /**
@@ -42,4 +44,30 @@ export function getPostById(id: number): Post {
   }
 
   return post;
+}
+
+/**
+ * Updates a post by its ID with the given payload and returns the updated post.
+ * If no post with the given ID exists, throws an AppError with status code NOT_FOUND.
+ * If the update is successful, returns the updated post.
+ * If the update fails (e.g. due to a database error), throws an AppError with status code INTERNAL_SERVER_ERROR.
+ * @param {number} id The ID of the post to update.
+ * @param {UpdatePostInput} payload The payload to update the post with.
+ * @returns {Post} The updated post if found, or undefined if not.
+ * @throws {AppError} If the post cannot be found or updated.
+ */
+export function updatePost(id: number, payload: UpdatePostInput): Post {
+  const existingPost = postRepository.findPostById(id);
+
+  if (!existingPost) {
+    throw AppError.notFound(ERROR_MESSAGES.POST_NOT_FOUND);
+  }
+
+  const updatedPost = postRepository.updatePost(id, payload);
+
+  if (!updatedPost) {
+    throw AppError.internalServerError(ERROR_MESSAGES.POST_UPDATE_FAILED);
+  }
+
+  return updatedPost;
 }

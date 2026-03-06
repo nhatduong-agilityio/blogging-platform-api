@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 
 // Constants
 import { RESPONSE_STATUS_CODE } from '../constants/status-code.js';
+import { ERROR_MESSAGES } from '../constants/messages.js';
 
 // Utils
 import { sendSuccessResponse } from '../utils/response.js';
@@ -10,7 +11,6 @@ import { validateCreatePostInput } from '../utils/validators.js';
 // Services
 import * as postService from '../services/post.js';
 import { AppError } from '../utils/app-error.js';
-import { ERROR_MESSAGES } from '../constants/messages.js';
 
 /**
  * Parses the 'id' parameter from the request object and returns it as a number.
@@ -88,6 +88,33 @@ export function getPostById(
   try {
     const id = parseIdParam(req);
     const post = postService.getPostById(id);
+
+    sendSuccessResponse(res, post);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Updates a post by its ID with the given payload and returns the updated post.
+ * If no post with the given ID exists, throws an AppError with status code NOT_FOUND.
+ * If the update is successful, returns the updated post.
+ * If the update fails (e.g. due to a database error), throws an AppError with status code INTERNAL_SERVER_ERROR.
+ * @param {Request} req - The Express.js request object.
+ * @param {Response} res - The Express.js response object.
+ * @param {NextFunction} next - The Express.js next function, which is called if an error occurs.
+ * @throws {AppError} If the post cannot be found or updated.
+ */
+export function updatePost(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void {
+  try {
+    const id = parseIdParam(req);
+
+    const result = validateCreatePostInput(req.body);
+    const post = postService.updatePost(id, result);
 
     sendSuccessResponse(res, post);
   } catch (error) {
