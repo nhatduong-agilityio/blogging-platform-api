@@ -24,4 +24,4 @@ export interface CreatePostInput {
   tags: string[];
 }
 
-export type UpdatePostPayload = Partial<CreatePostInput>;
+export type UpdatePostInput = CreatePostInput;

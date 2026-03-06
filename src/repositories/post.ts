@@ -5,7 +5,12 @@ import { getDb } from '../database/connection.js';
 import { ERROR_MESSAGES } from '../constants/messages.js';
 
 // Types
-import type { CreatePostInput, Post, PostRow } from '../types/post.js';
+import type {
+  CreatePostInput,
+  Post,
+  PostRow,
+  UpdatePostInput
+} from '../types/post.js';
 
 // Utils
 import { mapPostRowToPost } from '../utils/map.js';
@@ -87,4 +92,42 @@ export function createPost(payload: CreatePostInput): Post {
   }
 
   return createdPost;
+}
+
+/**
+ * Updates a post by its ID with the given payload and returns the updated post.
+ * If no post with the given ID exists, throws an AppError with status code NOT_FOUND.
+ * If the update is successful, returns the updated post.
+ * If the update fails (e.g. due to a database error), throws an AppError with status code INTERNAL_SERVER_ERROR.
+ * @param {number} id The ID of the post to update.
+ * @param {UpdatePostInput} payload The payload to update the post with.
+ * @returns {Post | undefined} The updated post if found, or undefined if not.
+ * @throws {AppError} If the post cannot be found or updated.
+ */
+export function updatePost(
+  id: number,
+  payload: UpdatePostInput
+): Post | undefined {
+  const db = getDb();
+  const now = new Date().toISOString();
+
+  const stmt = db.prepare<[string, string, string, string, string, number]>(`
+    UPDATE posts
+    SET title = ?, content = ?, category = ?, tags = ?, updated_at = ?
+    WHERE id = ?`);
+
+  const result = stmt.run(
+    payload.title,
+    payload.content,
+    payload.category,
+    JSON.stringify(payload.tags),
+    now,
+    id
+  );
+
+  if (result.changes === 0) {
+    throw new Error(ERROR_MESSAGES.POST_UPDATE_FAILED);
+  }
+
+  return findPostById(id);
 }
