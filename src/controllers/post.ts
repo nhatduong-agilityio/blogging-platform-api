@@ -6,25 +6,35 @@ import { ERROR_MESSAGES } from '../constants/messages.js';
 
 // Utils
 import { sendSuccessResponse } from '../utils/response.js';
-import { validateCreatePostInput } from '../utils/validators.js';
+import {
+  createPostSchema,
+  postIdSchema,
+  searchQuerySchema,
+  updatePostSchema
+} from '../utils/validators.js';
+import { handleZodError } from '../utils/zod.js';
+import { AppError } from '../utils/app-error.js';
 
 // Services
 import * as postService from '../services/post.js';
-import { AppError } from '../utils/app-error.js';
 
 /**
- * Parses the 'id' parameter from the request object and returns it as a number.
- * Throws a bad request error if the 'id' parameter is missing or invalid.
- * @returns {number} The parsed 'id' parameter.
+ * Parses the id parameter from the request URL and returns the parsed id as a number.
+ * If the id is invalid, throws an AppError with status code BAD_REQUEST.
+ * @param {Request} req - The Express.js request object.
+ * @returns {number} The parsed id.
+ * @throws {AppError} If the id is invalid.
  */
 function parseIdParam(req: Request): number {
-  const id = req.params.id as string;
+  const result = postIdSchema.safeParse({
+    id: req.params['id']
+  });
 
-  if (!id) {
+  if (!result.success) {
     throw AppError.badRequest(ERROR_MESSAGES.INVALID_POST_ID);
   }
 
-  return parseInt(id, 10);
+  return result.data.id;
 }
 
 /**
@@ -40,9 +50,13 @@ export function createPost(
   next: NextFunction
 ): void {
   try {
-    const result = validateCreatePostInput(req.body);
-    const post = postService.createPost(result);
+    const result = createPostSchema.safeParse(req.body);
 
+    if (!result.success) {
+      throw handleZodError(result.error);
+    }
+
+    const post = postService.createPost(result.data);
     sendSuccessResponse(res, post, RESPONSE_STATUS_CODE.CREATED);
   } catch (error) {
     next(error);
@@ -63,9 +77,10 @@ export function getAllPosts(
   next: NextFunction
 ): void {
   try {
-    const query = req.query;
-    const posts = postService.getAllPosts(query.term as string);
+    const queryResult = searchQuerySchema.safeParse(req.query);
+    const term = queryResult.success ? queryResult.data.term : undefined;
 
+    const posts = postService.getAllPosts(term);
     sendSuccessResponse(res, posts);
   } catch (error) {
     next(error);
@@ -113,9 +128,13 @@ export function updatePost(
   try {
     const id = parseIdParam(req);
 
-    const result = validateCreatePostInput(req.body);
-    const post = postService.updatePost(id, result);
+    const result = updatePostSchema.safeParse(req.body);
 
+    if (!result.success) {
+      throw handleZodError(result.error);
+    }
+
+    const post = postService.updatePost(id, result.data);
     sendSuccessResponse(res, post);
   } catch (error) {
     next(error);

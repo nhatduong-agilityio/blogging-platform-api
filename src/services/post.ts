@@ -2,21 +2,25 @@
 import { ERROR_MESSAGES } from '../constants/messages.js';
 
 // Types
-import type { CreatePostInput, Post, UpdatePostInput } from '../types/post.js';
+import type { Post } from '../types/post.js';
 
 // Repositories
 import * as postRepository from '../repositories/post.js';
 
 // Utils
 import { AppError } from '../utils/app-error.js';
+import type {
+  CreatePostSchema,
+  UpdatePostSchema
+} from '../utils/validators.js';
 
 /**
  * Creates a new post with the given payload and returns the created post.
- * @param {CreatePostInput} payload The payload to create the post with.
- * @returns {Post} The created post.
- * @throws {Error} If the post cannot be created.
+ * @param {CreatePostSchema} payload - The payload to create the post with.
+ * @returns {Post} - The created post.
+ * @throws {AppError} If the post cannot be created.
  */
-export function createPost(payload: CreatePostInput): Post {
+export function createPost(payload: CreatePostSchema): Post {
   return postRepository.createPost(payload);
 }
 
@@ -51,12 +55,12 @@ export function getPostById(id: number): Post {
  * If no post with the given ID exists, throws an AppError with status code NOT_FOUND.
  * If the update is successful, returns the updated post.
  * If the update fails (e.g. due to a database error), throws an AppError with status code INTERNAL_SERVER_ERROR.
- * @param {number} id The ID of the post to update.
- * @param {UpdatePostInput} payload The payload to update the post with.
- * @returns {Post} The updated post if found, or undefined if not.
+ * @param {number} id - The ID of the post to update.
+ * @param {UpdatePostSchema} payload - The payload to update the post with.
+ * @returns {Post} The updated post if found.
  * @throws {AppError} If the post cannot be found or updated.
  */
-export function updatePost(id: number, payload: UpdatePostInput): Post {
+export function updatePost(id: number, payload: UpdatePostSchema): Post {
   const existingPost = postRepository.findPostById(id);
 
   if (!existingPost) {

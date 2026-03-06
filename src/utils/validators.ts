@@ -1,90 +1,30 @@
-// Constants
-import { ERROR_MESSAGES } from '../constants/messages.js';
-import { RESPONSE_STATUS_CODE } from '../constants/status-code.js';
+import z from 'zod';
 
-// Types
-import type { CreatePostInput } from '../types/post.js';
+export const createPostSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(1, 'Title is required')
+    .max(255, 'Title must be at most 255 characters long'),
+  content: z.string().trim().min(1, 'Content is required'),
+  category: z.string().trim().min(1, 'Category is required'),
+  tags: z
+    .array(z.string().trim().min(1, 'Tag cannot be empty'))
+    .min(1, 'At least one tag is required')
+});
 
-// Utils
-import { AppError } from './app-error.js';
+export const updatePostSchema = createPostSchema;
 
-/**
- * Validates the input for creating a post.
- * @throws {AppError} If the input is invalid.
- * @returns {CreatePostInput} The validated and normalized input.
- */
-export function validateCreatePostInput(body: unknown): CreatePostInput {
-  if (!body || typeof body !== 'object') {
-    throw new AppError(
-      ERROR_MESSAGES.BAD_REQUEST,
-      RESPONSE_STATUS_CODE.BAD_REQUEST
-    );
-  }
+export const postIdSchema = z.object({
+  id: z.coerce
+    .number()
+    .int({ message: 'ID must be an integer' })
+    .positive({ message: 'ID must be a positive number' })
+});
 
-  const { title, content, category, tags } = body as Record<string, unknown>;
+export const searchQuerySchema = z.object({
+  term: z.string().optional()
+});
 
-  const errors: Record<string, string[]> = {};
-
-  // validate and normalize title, content, category, and tags
-  let normalizedTitle: string | undefined;
-  if (typeof title === 'string') {
-    normalizedTitle = title.trim();
-    if (normalizedTitle.length === 0) {
-      errors.title = ['Title cannot be empty'];
-    }
-  } else {
-    errors.title = ['Title is required and must be a string'];
-  }
-
-  let normalizedContent: string | undefined;
-  if (typeof content === 'string') {
-    normalizedContent = content.trim();
-    if (normalizedContent.length === 0) {
-      errors.content = ['Content cannot be empty'];
-    }
-  } else {
-    errors.content = ['Content is required and must be a string'];
-  }
-
-  let normalizedCategory: string | undefined;
-  if (typeof category === 'string') {
-    normalizedCategory = category.trim();
-    if (normalizedCategory.length === 0) {
-      errors.category = ['Category cannot be empty'];
-    }
-  } else {
-    errors.category = ['Category is required and must be a string'];
-  }
-
-  let normalizedTags: string[] | undefined;
-  if (Array.isArray(tags)) {
-    const cleaned = tags
-      .filter(tag => typeof tag === 'string')
-      .map(tag => tag.trim())
-      .filter(tag => tag.length > 0);
-
-    if (cleaned.length === 0) {
-      errors.tags = ['Tags must contain at least one valid string'];
-    } else {
-      // remove duplicates
-      normalizedTags = [...new Set(cleaned)];
-    }
-  } else {
-    errors.tags = ['Tags must be an array of strings'];
-  }
-
-  if (Object.keys(errors).length > 0) {
-    throw new AppError(
-      'Validation failed',
-      RESPONSE_STATUS_CODE.BAD_REQUEST,
-      errors
-    );
-  }
-
-  return {
-    title: normalizedTitle!,
-    content: normalizedContent!,
-    category: normalizedCategory!,
-    tags: normalizedTags!
-  };
-}
+export type CreatePostSchema = z.infer<typeof createPostSchema>;
+export type UpdatePostSchema = z.infer<typeof updatePostSchema>;
