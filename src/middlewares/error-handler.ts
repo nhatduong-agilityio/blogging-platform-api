@@ -46,7 +46,7 @@ export function notFoundHandler(req: Request, res: Response): void {
   const message =
     process.env.NODE_ENV === 'development'
       ? `Route ${req.method} ${req.path} not found`
-      : ERROR_MESSAGES.NOT_FOUND;
+      : ERROR_MESSAGES.NOT_FOUND();
 
   sendErrorResponse(res, message, RESPONSE_STATUS_CODE.NOT_FOUND);
 }
