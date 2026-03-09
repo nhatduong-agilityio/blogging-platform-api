@@ -6,6 +6,7 @@ import type { Database as DatabaseType } from 'better-sqlite3';
 
 // Middlewares
 import { idempotency } from '../middlewares/idempotency.js';
+import { writeLimiter } from '../middlewares/rate-limit.js';
 
 /**
  * Creates a new Router instance with the given PostController and registers routes for:
@@ -29,8 +30,8 @@ export function createPostRoutes(
   // Write routes — rate limited + idempotency on POST
   // PUT and DELETE are naturally idempotent by HTTP semantics,
   // so idempotency middleware is only needed on POST (create).
-  router.post('/', idempotency(db), controller.createPost);
-  router.put('/:id', controller.updatePost);
+  router.post('/', writeLimiter, idempotency(db), controller.createPost);
+  router.put('/:id', writeLimiter, controller.updatePost);
   router.delete('/:id', controller.deletePost);
 
   return router;

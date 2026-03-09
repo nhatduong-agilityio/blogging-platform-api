@@ -3,6 +3,7 @@ import express, { type Router, type Application } from 'express';
 // Middlewares
 import { errorHandler, notFoundHandler } from './middlewares/error-handler.js';
 import { requestLogger } from './middlewares/request-logger.js';
+import { globalLimiter } from './middlewares/rate-limit.js';
 
 export interface RouteConfig {
   path: string;
@@ -21,6 +22,9 @@ export function createApp(routes: RouteConfig[]): Application {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
   app.use(requestLogger);
+
+  // Rate limit middleware
+  app.use(globalLimiter);
 
   // Routes
   routes.forEach(route => {
