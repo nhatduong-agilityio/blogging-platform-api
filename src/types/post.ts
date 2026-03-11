@@ -11,15 +11,6 @@ export interface Post {
   updatedAt: string;
 }
 
-export interface PostRow extends Omit<
-  Post,
-  'createdAt' | 'updatedAt' | 'tags'
-> {
-  tags: string;
-  created_at: string;
-  updated_at: string;
-}
-
 export type IPostRepository = IRepository<
   Post,
   CreatePostSchema,

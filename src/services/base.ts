@@ -11,9 +11,9 @@ export abstract class BaseService<T, C, U> implements IService<T, C, U> {
   constructor(protected readonly repository: IRepository<T, C, U>) {}
 
   // Implement abstract methods
-  abstract getAll(term?: string): T[];
-  abstract create(input: C): T;
-  abstract update(id: number, input: U): T | undefined;
+  abstract getAll(term?: string): Promise<T[]>;
+  abstract create(input: C): Promise<T>;
+  abstract update(id: number, input: U): Promise<T>;
 
   // Protected helpers
 
@@ -27,30 +27,26 @@ export abstract class BaseService<T, C, U> implements IService<T, C, U> {
   // Provided methods
 
   /**
-   * Finds a post by its ID and returns it if found, or throws an AppError with status code NOT_FOUND if not.
-   * @param {number} id - The ID of the post to find.
-   * @returns {T | undefined} The post if found, or undefined if not.
-   * @throws {AppError} If the post cannot be found.
+   * Finds a record by its ID.
+   * @param {number} id - The ID of the record to find.
+   * @returns {Promise<T>} A promise that resolves to the found record if it exists, or throws an AppError with status code NOT_FOUND if not.
    */
-  getById(id: number): T {
-    const entity = this.repository.findById(id);
-
+  async getById(id: number): Promise<T> {
+    const entity = await this.repository.findById(id);
     if (!entity) {
       throw AppError.notFound(ERROR_MESSAGES.NOT_FOUND(this.resourceName));
     }
-
     return entity;
   }
 
   /**
-   * Deletes a post by its ID.
-   * If no post with the given ID exists, throws an AppError with status code NOT_FOUND.
-   * @param {number} id - The ID of the post to delete.
-   * @throws {AppError} If the post cannot be found.
+   * Deletes a record by its ID.
+   * @param {number} id - The ID of the record to delete.
+   * @throws {AppError} If the record with the given ID does not exist.
+   * @returns {Promise<void>} A promise that resolves to void if the record is deleted, or throws an AppError with status code NOT_FOUND if not.
    */
-  delete(id: number): void {
-    const deleted = this.repository.delete(id);
-
+  async delete(id: number): Promise<void> {
+    const deleted = await this.repository.delete(id);
     if (!deleted) {
       throw AppError.notFound(ERROR_MESSAGES.NOT_FOUND(this.resourceName));
     }

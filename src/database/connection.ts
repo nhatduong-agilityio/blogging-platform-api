@@ -1,94 +1,60 @@
-import Database from 'better-sqlite3';
+import 'reflect-metadata';
+import { DataSource } from 'typeorm';
 import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
+import { PostEntity } from '../entity/post.js';
+import { IdempotencyKeyEntity } from '../entity/idempotency.js';
 
-// Types
-import type { Database as DatabaseType } from 'better-sqlite3';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-let db: DatabaseType = null as unknown as DatabaseType;
+// DataSource
+// Single source of truth for the DB connection.
+// Passed into repositories via constructor (DI — no global access).
 
 /**
- * Returns the initialized database connection.
- * Throws an error if the database connection has not been initialized using initializeDb() first.
- * @returns The initialized database connection.
- */
-export function getDb(): DatabaseType {
-  if (!db) {
-    throw new Error(
-      'Database connection not initialized. Call initializeDb() first.'
-    );
-  }
-
-  return db;
-}
-
-/**
- * Runs database migrations to initialize the database schema.
- * @param {DatabaseType} database - The database connection to run the migrations on.
- */
-function runMigrations(database: DatabaseType): void {
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS posts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      content TEXT NOT NULL,
-      category TEXT NOT NULL,
-      tags TEXT NOT NULL DEFAULT '[]',
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-
-    -- Stores idempotency keys so duplicate POST requests (e.g. after
-    -- a network error) return the original response instead of creating
-    -- a second record.
-    -- TTL is enforced at read time; a periodic cleanup removes expired rows.
-    CREATE TABLE IF NOT EXISTS idempotency_keys (
-      key          TEXT     PRIMARY KEY,
-      status_code  INTEGER  NOT NULL,
-      response     TEXT     NOT NULL,  -- JSON-serialised response body
-      created_at   INTEGER  NOT NULL   -- Unix ms timestamp
-    );
-  `);
-}
-
-/**
- * Initializes the database connection and runs migrations to initialize the database schema.
- * The database path can be overridden by setting the DB_PATH environment variable.
+ * Creates a new DataSource instance with the given database path.
  * If DB_PATH is not set, the database will be stored in the ./data/blog.db file relative to the current working directory.
  * @returns The initialized database connection.
  */
-export function initializeDb(): DatabaseType {
-  const dbPath = process.env.DB_PATH ?? path.join(__dirname, './data/blog.db');
-  const resolvedDbPath = path.resolve(process.cwd(), dbPath);
-  const dbDir = path.dirname(resolvedDbPath);
+export function createDataSource(): DataSource {
+  const dbPath = process.env.DB_PATH ?? './data/blog.db';
+  const resolvedPath = path.resolve(process.cwd(), dbPath);
 
-  // Ensure the directory exists
-  if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
-  }
+  return new DataSource({
+    type: 'better-sqlite3',
+    database: resolvedPath,
+    entities: [PostEntity, IdempotencyKeyEntity],
 
-  db = new Database(resolvedDbPath);
+    // synchronize: true auto-creates/alters tables to match entities.
+    // Fine for development — use migrations in production.
+    synchronize: process.env.NODE_ENV !== 'production',
 
-  db.pragma('journal_mode = WAL'); // Enable Write-Ahead Logging for better concurrency
-  db.pragma('foreign_keys = ON'); // Enable foreign key constraints
+    // In production, run migrations instead of synchronize.
+    migrations: ['dist/database/migrations/*.js'],
 
-  runMigrations(db);
+    logging: process.env.NODE_ENV === 'development'
+  });
+}
 
-  console.info(`Database initialized at ${resolvedDbPath}`);
-  return db;
+/**
+ * Initializes the database connection.
+ * @returns A promise that resolves to the initialized database connection.
+ */
+export async function initializeDb(): Promise<DataSource> {
+  const dataSource = createDataSource();
+  await dataSource.initialize();
+  console.info(
+    `Database initialized: ${dataSource.options.database as string}`
+  );
+  return dataSource;
 }
 
 /**
  * Closes the database connection.
- * If the database connection is not initialized, this function does nothing.
+ * @param {DataSource} [dataSource] - The database connection to close.
+ * If not provided, the function will do nothing.
+ * @returns {Promise<void>} A promise that resolves to void once the database connection is closed.
  */
-export function closeDb(): void {
-  if (db) {
-    db.close();
-    db = null as unknown as DatabaseType;
+export async function closeDb(dataSource?: DataSource): Promise<void> {
+  if (dataSource?.isInitialized) {
+    await dataSource.destroy();
     console.info('Database connection closed.');
   }
 }

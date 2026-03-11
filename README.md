@@ -2,7 +2,7 @@
 
 A RESTful API for a personal blogging platform with full CRUD operations and search.
 
-Built with **TypeScript 5**, **Express 5**, **SQLite** (`better-sqlite3`), validated by **Zod** — managed by **pnpm**.
+Built with **TypeScript 5**, **Express 5**, **SQLite** via **TypeORM**, validated by **Zod** — managed by **pnpm**.
 
 ---
 
@@ -28,6 +28,12 @@ Built with **TypeScript 5**, **Express 5**, **SQLite** (`better-sqlite3`), valid
     - [Generic Interfaces](#generic-interfaces)
     - [Interface vs Abstract Class](#interface-vs-abstract-class)
     - [`createApp(routes: RouteConfig[])` factory](#createapproutes-routeconfig-factory)
+  - [Rate Limiting](#rate-limiting)
+  - [Idempotency](#idempotency)
+    - [How it works](#how-it-works)
+    - [Usage](#usage)
+    - [Rules](#rules)
+    - [Cleanup](#cleanup)
   - [Error Handling](#error-handling)
   - [Code Quality](#code-quality)
   - [Commit Convention](#commit-convention)
@@ -36,13 +42,13 @@ Built with **TypeScript 5**, **Express 5**, **SQLite** (`better-sqlite3`), valid
 
 ## Features
 
-| Endpoint     | Method   | Description                              |
-| ------------ | -------- | ---------------------------------------- |
-| `/posts`     | `GET`    | Get all posts (supports `?term=` search) |
-| `/posts/:id` | `GET`    | Get a single post by ID                  |
-| `/posts`     | `POST`   | Create a new post                        |
-| `/posts/:id` | `PUT`    | Update an existing post                  |
-| `/posts/:id` | `DELETE` | Delete a post                            |
+| Endpoint            | Method   | Description                              |
+| ------------------- | -------- | ---------------------------------------- |
+| `/api/v1/posts`     | `GET`    | Get all posts (supports `?term=` search) |
+| `/api/v1/posts/:id` | `GET`    | Get a single post by ID                  |
+| `/api/v1/posts`     | `POST`   | Create a new post (supports idempotency) |
+| `/api/v1/posts/:id` | `PUT`    | Update an existing post                  |
+| `/api/v1/posts/:id` | `DELETE` | Delete a post                            |
 
 ---
 
@@ -52,21 +58,28 @@ Built with **TypeScript 5**, **Express 5**, **SQLite** (`better-sqlite3`), valid
 blog-api/
 ├── src/
 │   ├── constants/
+│   │   ├── idempotency.ts      # TTL, header name, UUID regex constants
 │   │   ├── messages.ts         # Shared error/success message strings
-│   │   ├── route.ts            # Base route path constants
+│   │   ├── route.ts            # Base route path constants (API_V1_PREFIX)
 │   │   └── status-code.ts      # HTTP status code constants
 │   ├── controllers/
 │   │   └── post.ts             # PostController — HTTP in/out only
 │   ├── database/
-│   │   └── connection.ts       # SQLite init, migrations, close
+│   │   └── connection.ts       # TypeORM DataSource init & close
+│   ├── entity/
+│   │   ├── idempotency.ts      # IdempotencyKeyEntity — TypeORM entity
+│   │   └── post.ts             # PostEntity — TypeORM entity
 │   ├── middlewares/
 │   │   ├── error-handler.ts    # Global error handler + 404 handler
+│   │   ├── idempotency.ts      # Idempotency middleware + purgeExpiredKeys
+│   │   ├── rate-limit.ts       # globalLimiter + writeLimiter
 │   │   └── request-logger.ts   # Per-request logging (method, URL, status, ms)
+│   ├── migration/              # TypeORM migration files (production)
 │   ├── repositories/
-│   │   ├── base.ts             # Abstract BaseRepository<T, Row, C, U>
-│   │   └── post.ts             # PostRepository — SQL queries for posts
+│   │   ├── base.ts             # Abstract BaseRepository<E, T, C, U>
+│   │   └── post.ts             # PostRepository — wraps TypeORM Repository<PostEntity>
 │   ├── routes/
-│   │   └── post.ts             # createPostRouter(controller) factory
+│   │   └── post.ts             # createPostRouter(controller, idempotencyRepo) factory
 │   ├── schemas/
 │   │   └── post.ts             # Zod schemas: createPostSchema, updatePostSchema
 │   ├── services/
@@ -74,11 +87,10 @@ blog-api/
 │   │   └── post.ts             # PostService — business logic for posts
 │   ├── types/
 │   │   ├── api.ts              # ApiSuccessResponse, ApiErrorResponse, ApiResponse<T>
-│   │   ├── common.ts           # IRepository<T,C,U>, IService<T,C,U> generics
-│   │   └── post.ts             # Post, PostRow, IPostRepository, IPostService
+│   │   ├── common.ts           # IRepository<T,C,U>, IService<T,C,U> generics (async)
+│   │   └── post.ts             # Post, IPostRepository, IPostService
 │   ├── utils/
 │   │   ├── app-error.ts        # AppError class with static factory methods
-│   │   ├── map.ts              # Row-to-entity mapper utilities
 │   │   ├── response.ts         # sendSuccess / sendError helpers
 │   │   └── zod.ts              # Zod error → field error map converter
 │   ├── app.ts                  # Express app factory: createApp(routes)
@@ -142,7 +154,7 @@ pnpm build
 pnpm start
 ```
 
-> `data/blog.db` is created automatically on first run.
+> `data/blog.db` is created automatically on first run. TypeORM `synchronize: true` creates all tables from entities in development.
 
 ---
 
@@ -154,15 +166,19 @@ pnpm start
 | `NODE_ENV` | `development`    | Environment (`development` \| `production`) |
 | `DB_PATH`  | `./data/blog.db` | Path to the SQLite database file            |
 
+> In production, set `NODE_ENV=production` — this disables `synchronize` and requires explicit migrations from `src/migration/`.
+
 ---
 
 ## API Reference
 
+All routes are prefixed with `/api/v1`.
+
 ### Get All Posts
 
 ```
-GET /posts
-GET /posts?term=tech
+GET /api/v1/posts
+GET /api/v1/posts?term=tech
 ```
 
 Wildcard search on `title`, `content`, and `category` (case-insensitive). Omit `term` to return all posts.
@@ -191,7 +207,7 @@ Wildcard search on `title`, `content`, and `category` (case-insensitive). Omit `
 ### Get Post by ID
 
 ```
-GET /posts/:id
+GET /api/v1/posts/:id
 ```
 
 **Response `200`:** single post object (same shape as above)
@@ -211,7 +227,7 @@ GET /posts/:id
 ### Create Post
 
 ```
-POST /posts
+POST /api/v1/posts
 Content-Type: application/json
 ```
 
@@ -249,19 +265,21 @@ Content-Type: application/json
 }
 ```
 
+> `POST /api/v1/posts` supports the `Idempotency-Key` header — see [Idempotency](#idempotency).
+
 ---
 
 ### Update Post
 
 ```
-PUT /posts/:id
+PUT /api/v1/posts/:id
 Content-Type: application/json
 ```
 
 Request body — same shape as create. All fields required.
 
-**Response `200`:** updated post object  
-**Response `400`:** validation errors  
+**Response `200`:** updated post object
+**Response `400`:** validation errors
 **Response `404`:** post not found
 
 ---
@@ -269,28 +287,43 @@ Request body — same shape as create. All fields required.
 ### Delete Post
 
 ```
-DELETE /posts/:id
+DELETE /api/v1/posts/:id
 ```
 
-**Response `204`:** no content  
+**Response `204`:** no content
 **Response `404`:** post not found
 
 ---
 
 ## Data Model
 
-`data/blog.db` — SQLite schema:
+Tables are managed by **TypeORM entities** in `src/entity/`. In development, `synchronize: true` auto-creates and alters tables on startup. In production, run migrations from `src/migration/`.
 
-```sql
-CREATE TABLE posts (
-  id          INTEGER  PRIMARY KEY AUTOINCREMENT,
-  title       TEXT     NOT NULL,
-  content     TEXT     NOT NULL,
-  category    TEXT     NOT NULL,
-  tags        TEXT     NOT NULL DEFAULT '[]',  -- stored as JSON string
-  created_at  DATETIME NOT NULL,
-  updated_at  DATETIME NOT NULL
-);
+**`posts` table — via `PostEntity`:**
+
+```typescript
+@Entity('posts')
+export class PostEntity {
+  @PrimaryGeneratedColumn()       id: number;
+  @Column({ type: 'text' })       title: string;
+  @Column({ type: 'text' })       content: string;
+  @Column({ type: 'text' })       category: string;
+  @Column({ type: 'text', transformer: { ... } }) tags: string[]; // stored as JSON
+  @CreateDateColumn()             createdAt: Date;
+  @UpdateDateColumn()             updatedAt: Date;
+}
+```
+
+**`idempotency_keys` table — via `IdempotencyKeyEntity`:**
+
+```typescript
+@Entity('idempotency_keys')
+export class IdempotencyKeyEntity {
+  @PrimaryColumn({ type: 'text' }) key: string; // UUID
+  @Column({ type: 'integer' }) statusCode: number;
+  @Column({ type: 'text' }) response: string; // JSON-serialised body
+  @Column({ type: 'integer' }) createdAt: number; // Unix ms timestamp
+}
 ```
 
 **Domain entity shape (`Post`):**
@@ -318,25 +351,26 @@ HTTP Request
      ↓
   Service      business logic, not-found guards, orchestration
      ↓
- Repository    SQL queries, row mapping, database access
+ Repository    TypeORM queries, entity → domain mapping
      ↓
-  SQLite DB
+  SQLite DB (via TypeORM DataSource)
 ```
 
-**Dependency flow — nothing crosses layer boundaries:**
+**Dependency flow — `server.ts` is the only file that calls `new`:**
 
 ```
-server.ts  (composition root — the only file that calls `new`)
+server.ts  (composition root)
     │
-    ├── initDb()                     → Database instance
-    ├── new PostRepository(db)       → IPostRepository
-    ├── new PostService(repository)  → IPostService
-    ├── new PostController(service)  → PostController
-    ├── createPostRouter(controller) → Router
-    └── createApp([{ path, router }])→ Express app
+    ├── initDb()                              → DataSource
+    ├── dataSource.getRepository(PostEntity) → Repository<PostEntity>
+    ├── new PostRepository(typeormRepo)       → IPostRepository
+    ├── new PostService(postRepository)       → IPostService
+    ├── new PostController(postService)       → PostController
+    ├── createPostRouter(controller, idempotencyRepo) → Router
+    └── createApp([{ path, router }])         → Express app
 ```
 
-Adding a new resource (e.g. `User`) only requires wiring in `server.ts` — no other file needs to change.
+Adding a new resource (e.g. `User`) only requires adding its entity, repository, service, controller, and wiring in `server.ts` — no other file needs to change.
 
 ---
 
@@ -344,26 +378,24 @@ Adding a new resource (e.g. `User`) only requires wiring in `server.ts` — no o
 
 ### Generic Base Classes
 
-The core reusable layer uses two generic abstract classes that subclasses extend:
-
-**`BaseRepository<T, Row, C, U>`** — write `findById` and `delete` once:
+**`BaseRepository<E, T, C, U>`** — wraps TypeORM `Repository<E>`, provides `findById` and `delete` for free:
 
 ```typescript
 // PostRepository only needs to implement:
-//   mapRow(row: PostRow): Post
+//   toDomain(entity: PostEntity): Post
 //   findAll(term?)
 //   create(input)
 //   update(id, input)
 //
-// findById and delete are inherited from BaseRepository
+// findById and delete are inherited — no SQL written twice
 
 class PostRepository
-  extends BaseRepository<Post, PostRow, CreatePostDto, UpdatePostDto>
+  extends BaseRepository<PostEntity, Post, CreatePostDto, UpdatePostDto>
   implements IPostRepository {
-    protected mapRow(row: PostRow): Post { ... }
-    findAll(term?: string): Post[] { ... }
-    create(input: CreatePostDto): Post { ... }
-    update(id: number, input: UpdatePostDto): Post | undefined { ... }
+    protected toDomain(entity: PostEntity): Post { ... }
+    async findAll(term?: string): Promise<Post[]> { ... }
+    async create(input: CreatePostDto): Promise<Post> { ... }
+    async update(id: number, input: UpdatePostDto): Promise<Post | undefined> { ... }
   }
 ```
 
@@ -372,23 +404,23 @@ class PostRepository
 ```typescript
 // PostService only needs to implement:
 //   getAll, create, update
-//   get resourceName(): string  ← used in "Post not found" messages
+//   get resourceName(): string  ← drives "Post not found" messages
 //
 // getById and delete (with AppError.notFound) are inherited
 
 class PostService
   extends BaseService<Post, CreatePostDto, UpdatePostDto>
   implements IPostService {
-    protected get resourceName() { return 'Post'; }
-    getAll(term?: string): Post[] { ... }
-    create(input: CreatePostDto): Post { ... }
-    update(id: number, input: UpdatePostDto): Post { ... }
+    protected readonly resourceName = 'Post';
+    async getAll(term?: string): Promise<Post[]> { ... }
+    async create(input: CreatePostDto): Promise<Post> { ... }
+    async update(id: number, input: UpdatePostDto): Promise<Post> { ... }
   }
 ```
 
 ### Generic Interfaces
 
-All type contracts are defined in `src/types/common.ts`:
+All type contracts live in `src/types/common.ts`. All methods are `async` — TypeORM operations return Promises:
 
 | Interface               | Definition                                      | Purpose                              |
 | ----------------------- | ----------------------------------------------- | ------------------------------------ |
@@ -400,23 +432,99 @@ All type contracts are defined in `src/types/common.ts`:
 
 ### Interface vs Abstract Class
 
-| Used for                                               | Why                                                                                                          |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| `IPostRepository`, `IPostService` — **interfaces**     | Define contracts only; no shared implementation; controller/service depend on these, not on concrete classes |
-| `BaseRepository`, `BaseService` — **abstract classes** | Share real implementation (`findById`, `delete`, `getById`, not-found guard) across all future resources     |
+| Used for                                               | Why                                                                                                     |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `IPostRepository`, `IPostService` — **interfaces**     | Contract only — controller/service depend on abstractions, not concrete classes                         |
+| `BaseRepository`, `BaseService` — **abstract classes** | Share real async implementation (`findById`, `delete`, `getById`, not-found guard) across all resources |
 
 ### `createApp(routes: RouteConfig[])` factory
 
-`app.ts` accepts an array of `{ path, router }` pairs — it never imports any resource directly. This makes the app trivially testable and extensible:
+`app.ts` accepts an array of `{ path, router }` pairs and never imports any resource directly:
 
 ```typescript
-// server.ts — add new resources here only
+// server.ts — only place new resources are registered
 createApp([
-  { path: '/posts', router: createPostRouter(postController) },
-  { path: '/users', router: createUserRouter(userController) }, // future
-  { path: '/articles', router: createArticleRouter(articleController) } // future
+  {
+    path: '/api/v1/posts',
+    router: createPostRouter(postController, idempotencyRepo)
+  },
+  { path: '/api/v1/users', router: createUserRouter(userController) }, // future
+  { path: '/api/v1/articles', router: createArticleRouter(articleController) } // future
 ]);
 ```
+
+---
+
+## Rate Limiting
+
+Two limiters are applied, defined in `src/middlewares/rate-limit.ts`:
+
+| Limiter         | Limit                 | Applied to                   |
+| --------------- | --------------------- | ---------------------------- |
+| `globalLimiter` | 100 req / 15 min / IP | All routes                   |
+| `writeLimiter`  | 10 req / 15 min / IP  | `POST`, `PUT`, `DELETE` only |
+
+When a limit is exceeded the response is:
+
+```json
+{
+  "success": false,
+  "status": "error",
+  "message": "Too many requests, please try again later."
+}
+```
+
+Standard `RateLimit-*` response headers (RFC 9110) are included so clients can back off gracefully.
+
+---
+
+## Idempotency
+
+`POST /api/v1/posts` supports the `Idempotency-Key` header to prevent duplicate posts caused by network errors and client retries.
+
+### How it works
+
+```
+Request arrives
+    │
+    ├── No header          → proceed normally (no idempotency)
+    ├── Invalid UUID       → 400 Bad Request
+    ├── Key found, < 24h   → replay original response (no DB write)
+    ├── Key found, ≥ 24h   → delete stale row, treat as new request
+    └── New key            → create post → cache (key, status, response) → 201
+```
+
+### Usage
+
+```http
+POST /api/v1/posts
+Content-Type: application/json
+Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000
+
+{
+  "title": "My Post",
+  "content": "...",
+  "category": "Tech",
+  "tags": ["api"]
+}
+```
+
+On a replayed request, the response includes:
+
+```
+Idempotent-Replayed: true
+```
+
+### Rules
+
+- The key **must be a UUID** (v4 format)
+- Keys expire after **24 hours** — sending the same key after expiry creates a new post
+- Only `2xx` responses are cached — validation errors (`400`) are never stored
+- `PUT` and `DELETE` are naturally idempotent by HTTP semantics and do not require this header
+
+### Cleanup
+
+Expired keys are purged from the `idempotency_keys` table on every server startup. The helper `purgeExpiredKeys(repo)` in `src/middlewares/idempotency.ts` can also be called on a schedule in production.
 
 ---
 
@@ -437,37 +545,30 @@ All errors follow a consistent JSON shape:
 
 `errors` is only present on `400` validation failures.
 
-| Scenario                   | Status | Message                            |
-| -------------------------- | ------ | ---------------------------------- |
-| Post not found             | `404`  | `Post not found`                   |
-| Invalid ID param           | `400`  | `Invalid post ID`                  |
-| Missing required field     | `400`  | `Validation failed` + `errors` map |
-| Route not found            | `404`  | `Route METHOD /path not found`     |
-| Unhandled exception (dev)  | `500`  | Original error message             |
-| Unhandled exception (prod) | `500`  | `Internal server error`            |
-
-`AppError` static factory methods used throughout:
-
-```typescript
-AppError.notFound('Post'); // 404 Post not found
-AppError.badRequest('Validation failed', errors); // 400 with field errors
-AppError.internal('Failed to update post'); // 500
-```
+| Scenario                   | Status | Message                             |
+| -------------------------- | ------ | ----------------------------------- |
+| Post not found             | `404`  | `Post not found`                    |
+| Invalid ID param           | `400`  | `Invalid post ID`                   |
+| Missing required field     | `400`  | `Validation failed` + `errors` map  |
+| Invalid Idempotency-Key    | `400`  | `Invalid idempotency-key header...` |
+| Rate limit exceeded        | `429`  | `Too many requests...`              |
+| Route not found            | `404`  | `Route METHOD /path not found`      |
+| Unhandled exception (dev)  | `500`  | Original error message              |
+| Unhandled exception (prod) | `500`  | `Internal server error`             |
 
 ---
 
 ## Code Quality
 
-| Tool                                       | Purpose                                             |
-| ------------------------------------------ | --------------------------------------------------- |
-| TypeScript `strict` + `NodeNext`           | Full type safety, ESM module resolution             |
-| `verbatimModuleSyntax`                     | Enforces `import type` for type-only imports        |
-| `erasableSyntaxOnly`                       | Disallows non-strippable syntax (enums, namespaces) |
-| ESLint (flat config) + `typescript-eslint` | Linting with type-aware rules                       |
-| Prettier                                   | Consistent formatting                               |
-| EditorConfig                               | Cross-editor whitespace/indent consistency          |
-| Husky                                      | Git hooks: pre-commit runs lint + format check      |
-| Commitlint                                 | Enforces Conventional Commits on commit messages    |
+| Tool                                               | Purpose                                          |
+| -------------------------------------------------- | ------------------------------------------------ |
+| TypeScript `strict` + `NodeNext`                   | Full type safety, ESM module resolution          |
+| `experimentalDecorators` + `emitDecoratorMetadata` | Required for TypeORM entity decorators           |
+| ESLint (flat config) + `typescript-eslint`         | Linting with type-aware rules                    |
+| Prettier                                           | Consistent formatting                            |
+| EditorConfig                                       | Cross-editor whitespace/indent consistency       |
+| Husky                                              | Git hooks: pre-commit runs lint + format check   |
+| Commitlint                                         | Enforces Conventional Commits on commit messages |
 
 ```bash
 pnpm lint          # Check for lint errors
@@ -483,11 +584,11 @@ pnpm format:check  # Check formatting without writing
 Uses [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
-feat: add search filter to GET /posts
-fix: handle missing category field
-refactor: extract base repository class
-docs: update API reference in README
-chore: update dependencies
+feat: add idempotency support to POST /posts
+fix: handle legacy comma-separated tags format
+refactor: migrate raw SQL to TypeORM entities
+docs: update README with rate limiting section
+chore: upgrade typeorm to 0.3.28
 ```
 
 **Allowed types:** `feat` | `fix` | `docs` | `style` | `refactor` | `test` | `chore` | `perf` | `ci` | `revert`

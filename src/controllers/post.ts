@@ -41,22 +41,30 @@ function parseIdParam(req: Request): number {
 export class PostController {
   constructor(private readonly postService: IPostService) {}
 
-  getAllPosts = (req: Request, res: Response, next: NextFunction): void => {
+  getAllPosts = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       const queryResult = searchQuerySchema.safeParse(req.query);
       const term = queryResult.success ? queryResult.data.term : undefined;
 
-      const posts = this.postService.getAll(term);
+      const posts = await this.postService.getAll(term);
       sendSuccessResponse(res, posts);
     } catch (error) {
       next(error);
     }
   };
 
-  getPostById = (req: Request, res: Response, next: NextFunction): void => {
+  getPostById = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       const id = parseIdParam(req);
-      const post = this.postService.getById(id);
+      const post = await this.postService.getById(id);
 
       sendSuccessResponse(res, post);
     } catch (error) {
@@ -64,7 +72,11 @@ export class PostController {
     }
   };
 
-  createPost = (req: Request, res: Response, next: NextFunction): void => {
+  createPost = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       const result = createPostSchema.safeParse(req.body);
 
@@ -72,14 +84,18 @@ export class PostController {
         throw handleZodError(result.error);
       }
 
-      const post = this.postService.create(result.data);
+      const post = await this.postService.create(result.data);
       sendSuccessResponse(res, post, RESPONSE_STATUS_CODE.CREATED);
     } catch (error) {
       next(error);
     }
   };
 
-  updatePost = (req: Request, res: Response, next: NextFunction): void => {
+  updatePost = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       const id = parseIdParam(req);
 
@@ -89,17 +105,21 @@ export class PostController {
         throw handleZodError(result.error);
       }
 
-      const post = this.postService.update(id, result.data);
+      const post = await this.postService.update(id, result.data);
       sendSuccessResponse(res, post);
     } catch (error) {
       next(error);
     }
   };
 
-  deletePost = (req: Request, res: Response, next: NextFunction): void => {
+  deletePost = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       const id = parseIdParam(req);
-      this.postService.delete(id);
+      await this.postService.delete(id);
 
       sendSuccessResponse(res, null, RESPONSE_STATUS_CODE.NO_CONTENT);
     } catch (error) {
