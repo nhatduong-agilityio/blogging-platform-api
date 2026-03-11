@@ -4,33 +4,32 @@ import { RESPONSE_STATUS_CODE } from '../constants/status-code.js';
 
 // Types
 import type { Request, Response, NextFunction } from 'express';
-import type { Database as DatabaseType } from 'better-sqlite3';
-import type { IdempotencyRow } from '../types/idempotency.js';
+import type { Repository } from 'typeorm';
+import type { IdempotencyKeyEntity } from '../entity/idempotency.js';
 
 // Utils
 import { sendErrorResponse } from '../utils/response.js';
 
-// Middleware Factory
-// Usage: router.post('/', idempotency(db), controller.create)
-// Flow:
-//   1. Header missing          → proceed normally (no idempotency)
-//   2. Header present, bad fmt → 400
-//   3. Key found, not expired  → replay cached response (no DB write)
-//   4. Key found, expired      → delete stale row, treat as new request
-//   5. Key not found           → intercept res.json() to cache the response
-//      after the controller writes it, then let it through
-
 /**
- * Idempotency middleware.
- * Intercepts requests and responses to cache POST requests using a UUID header.
- * If the request is successfully cached, it will be replayed from cache instead of being sent to the controller.
- * If the request is not cached, it will be cached after the controller writes the response.
- * If the cached response has expired, it will be removed from cache and the request will be sent to the controller.
- * @param db - The database to use for caching.
- * @returns A middleware function that takes three arguments: req, res, and next.
+ * Idempotency middleware factory.
+ * @param {Repository<IdempotencyKeyEntity>} repo - The TypeORM repository for the idempotency keys.
+ * @returns A middleware function that checks if the request has a valid idempotency
+ * key, and if so, replays the cached response if it hasn't expired, or deletes
+ * the stale row if it has expired.
+ *
+ * The middleware works as follows:
+ *   1. If the request has no idempotency key, it proceeds normally (no idempotency).
+ *   2. If the request has an invalid idempotency key, it sends a 400 error response.
+ *   3. If the request has a valid idempotency key that hasn't expired, it replays the cached response.
+ *   4. If the request has a valid idempotency key that has expired, it deletes the stale row and treats it as a new request.
+ *   5. If the request has a new idempotency key, it intercepts the response and caches it after the controller writes it.
  */
-export function idempotency(db: DatabaseType) {
-  return (req: Request, res: Response, next: NextFunction): void => {
+export function idempotency(repo: Repository<IdempotencyKeyEntity>) {
+  return async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     const key = req.headers[KEY_HEADER];
 
     // 1. No header — skip idempotency entirely
@@ -50,29 +49,22 @@ export function idempotency(db: DatabaseType) {
     }
 
     // 3 & 4. Look up key in DB
-    const row = db
-      .prepare<
-        [string],
-        IdempotencyRow
-      >('SELECT * FROM idempotency_keys WHERE key = ?')
-      .get(key);
+    const row = await repo.findOne({ where: { key } });
 
     if (row) {
-      const age = Date.now() - row.created_at;
+      const age = Date.now() - row.createdAt;
 
       if (age <= TTL_MS) {
         // 3. Valid cached response — replay it
         res
-          .status(row.status_code)
+          .status(row.statusCode)
           .setHeader('Idempotent-Replayed', 'true')
           .json(JSON.parse(row.response) as unknown);
         return;
       }
 
       // 4. Expired — remove stale row and fall through
-      db.prepare<[string]>('DELETE FROM idempotency_keys WHERE key = ?').run(
-        key
-      );
+      await repo.delete({ key });
     }
 
     // 5. New key — intercept res.json to cache the response
@@ -81,12 +73,14 @@ export function idempotency(db: DatabaseType) {
     res.json = (body: unknown): Response => {
       // Only cache success responses (2xx) — don't cache validation errors
       if (res.statusCode >= 200 && res.statusCode < 300) {
-        db.prepare<[string, number, string, number]>(
-          `
-          INSERT OR REPLACE INTO idempotency_keys (key, status_code, response, created_at)
-          VALUES (?, ?, ?, ?)
-        `
-        ).run(key, res.statusCode, JSON.stringify(body), Date.now());
+        const entry = repo.create({
+          key,
+          statusCode: res.statusCode,
+          response: JSON.stringify(body),
+          createdAt: Date.now()
+        });
+        // Fire-and-forget — don't block the response
+        void repo.save(entry);
       }
       return originalJson(body);
     };
@@ -99,14 +93,17 @@ export function idempotency(db: DatabaseType) {
 // Call this on a schedule (e.g. daily) or at startup to evict
 // rows whose TTL has passed and will never be replayed again.
 /**
- * Removes expired idempotency keys from the database.
- * @param db - The database to purge from.
- * @returns The number of rows deleted.
+ * Removes all idempotency keys whose TTL has expired.
+ * @returns A promise that resolves to the number of rows that were deleted.
  */
-export function purgeExpiredKeys(db: DatabaseType): number {
+export async function purgeExpiredKeys(
+  repo: Repository<IdempotencyKeyEntity>
+): Promise<number> {
   const cutoff = Date.now() - TTL_MS;
-  const result = db
-    .prepare<[number]>('DELETE FROM idempotency_keys WHERE created_at < ?')
-    .run(cutoff);
-  return result.changes;
+  const result = await repo
+    .createQueryBuilder()
+    .delete()
+    .where('created_at < :cutoff', { cutoff })
+    .execute();
+  return result.affected ?? 0;
 }

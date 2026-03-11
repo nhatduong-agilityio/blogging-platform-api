@@ -1,80 +1,62 @@
 // Types
-import type { Database as DatabaseType } from 'better-sqlite3';
+import type { Repository, ObjectLiteral, FindOptionsWhere } from 'typeorm';
 import type { IRepository } from '../types/common.js';
 
+// Abstract Base Repository (TypeORM)
+//
+// Wraps TypeORM's Repository<E> and implements IRepository<T,C,U>.
+//
+// E   = TypeORM Entity class  (PostEntity, UserEntity, ...)
+// T   = domain type returned  (Post, User, ...)  — often same as E
+// C   = create DTO
+// U   = update DTO
+//
+// Subclasses get findById and delete for free.
+// They MUST implement: findAll, create, update
+// and toDomain() to convert Entity → domain type if needed.
 export abstract class BaseRepository<
+  E extends ObjectLiteral,
   T,
-  Row extends object,
   C,
   U
 > implements IRepository<T, C, U> {
-  constructor(
-    protected readonly db: DatabaseType,
-    protected readonly tableName: string
-  ) {}
+  constructor(protected readonly repo: Repository<E>) {}
 
-  // Implement abstract methods
+  // Must implement abstract methods
 
-  /**
-   * Finds all records that match the given term.
-   * @param term
-   */
-  abstract findAll(term?: string): T[];
-
-  /**
-   *  Creates a new record.
-   * @param input
-   */
-  abstract create(input: C): T;
-
-  /**
-   * Updates a record by its ID.
-   * @param id
-   * @param input
-   */
-  abstract update(id: number, input: U): T | undefined;
+  abstract findAll(term?: string): Promise<T[]>;
+  abstract create(input: C): Promise<T>;
+  abstract update(id: number, input: U): Promise<T | undefined>;
 
   // Protected helpers
 
-  /**
-   * Maps a row of data to an object of type T.
-   * @param row
-   */
-  protected abstract mapRow(row: Row): T;
-  /**
-   * Checks if a record exists by its ID.
-   * @param {number} id The ID of the record to check.
-   * @returns {boolean} true if the record exists, false otherwise.
-   */
-  protected exists(id: number): boolean {
-    return this.findById(id) !== undefined;
+  // Override when Entity shape differs from domain type.
+  // Default: treat entity as domain type (works when E === T).
+  protected toDomain(entity: E): T {
+    return entity as unknown as T;
   }
 
   // Provided methods
 
   /**
-   * Finds a record by its ID and returns it if found, or undefined if not.
-   * @param {number} id The ID of the record to find.
-   * @returns {T | undefined} The record if found, or undefined if not.
+   * Finds a record by its ID.
+   * @param {number} id - The ID of the record to find.
+   * @returns {Promise<T | undefined>} A promise that resolves to the found record if it exists, or undefined if not.
    */
-  findById(id: number): T | undefined {
-    const stmt = this.db.prepare<[number], Row>(
-      `SELECT * FROM ${this.tableName} WHERE id = ?`
-    );
-    const row = stmt.get(id);
-    return row ? this.mapRow(row) : undefined;
+  async findById(id: number): Promise<T | undefined> {
+    const entity = await this.repo.findOne({
+      where: { id: id } as unknown as FindOptionsWhere<E>
+    });
+    return entity ? this.toDomain(entity) : undefined;
   }
 
   /**
    * Deletes a record by its ID.
-   * @param {number} id The ID of the record to delete.
-   * @returns {boolean} True if the record was successfully deleted, false otherwise.
+   * @param {number} id - The ID of the record to delete.
+   * @returns {Promise<boolean>} A promise that resolves to true if the record was deleted, or false if not.
    */
-  delete(id: number): boolean {
-    const stmt = this.db.prepare<[number]>(
-      `DELETE FROM ${this.tableName} WHERE id = ?`
-    );
-    const result = stmt.run(id);
-    return result.changes > 0;
+  async delete(id: number): Promise<boolean> {
+    const result = await this.repo.delete(id);
+    return (result.affected ?? 0) > 0;
   }
 }

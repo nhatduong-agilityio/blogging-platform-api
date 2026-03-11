@@ -2,7 +2,8 @@ import { Router } from 'express';
 
 // Types
 import type { PostController } from '../controllers/post.js';
-import type { Database as DatabaseType } from 'better-sqlite3';
+import type { Repository } from 'typeorm';
+import type { IdempotencyKeyEntity } from '../entity/idempotency.js';
 
 // Middlewares
 import { idempotency } from '../middlewares/idempotency.js';
@@ -20,7 +21,7 @@ import { writeLimiter } from '../middlewares/rate-limit.js';
  */
 export function createPostRoutes(
   controller: PostController,
-  db: DatabaseType
+  repo: Repository<IdempotencyKeyEntity>
 ): Router {
   const router = Router();
 
@@ -30,9 +31,9 @@ export function createPostRoutes(
   // Write routes — rate limited + idempotency on POST
   // PUT and DELETE are naturally idempotent by HTTP semantics,
   // so idempotency middleware is only needed on POST (create).
-  router.post('/', writeLimiter, idempotency(db), controller.createPost);
+  router.post('/', writeLimiter, idempotency(repo), controller.createPost);
   router.put('/:id', writeLimiter, controller.updatePost);
-  router.delete('/:id', controller.deletePost);
+  router.delete('/:id', writeLimiter, controller.deletePost);
 
   return router;
 }
