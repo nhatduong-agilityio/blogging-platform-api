@@ -3,6 +3,7 @@ import { DataSource } from 'typeorm';
 import path from 'path';
 import { PostEntity } from '../entity/post.js';
 import { IdempotencyKeyEntity } from '../entity/idempotency.js';
+import { UserEntity } from '../entity/user.js';
 
 // DataSource
 // Single source of truth for the DB connection.
@@ -20,7 +21,7 @@ export function createDataSource(): DataSource {
   return new DataSource({
     type: 'better-sqlite3',
     database: resolvedPath,
-    entities: [PostEntity, IdempotencyKeyEntity],
+    entities: [PostEntity, IdempotencyKeyEntity, UserEntity],
 
     // synchronize: true auto-creates/alters tables to match entities.
     // Fine for development — use migrations in production.

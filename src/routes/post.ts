@@ -8,6 +8,7 @@ import type { IdempotencyKeyEntity } from '../entity/idempotency.js';
 // Middlewares
 import { idempotency } from '../middlewares/idempotency.js';
 import { writeLimiter } from '../middlewares/rate-limit.js';
+import { authMiddleware } from '../middlewares/auth.js';
 
 /**
  * Creates a new Router instance with the given PostController and registers routes for:
@@ -31,9 +32,15 @@ export function createPostRoutes(
   // Write routes — rate limited + idempotency on POST
   // PUT and DELETE are naturally idempotent by HTTP semantics,
   // so idempotency middleware is only needed on POST (create).
-  router.post('/', writeLimiter, idempotency(repo), controller.createPost);
-  router.put('/:id', writeLimiter, controller.updatePost);
-  router.delete('/:id', writeLimiter, controller.deletePost);
+  router.post(
+    '/',
+    authMiddleware,
+    writeLimiter,
+    idempotency(repo),
+    controller.createPost
+  );
+  router.put('/:id', authMiddleware, writeLimiter, controller.updatePost);
+  router.delete('/:id', authMiddleware, writeLimiter, controller.deletePost);
 
   return router;
 }
