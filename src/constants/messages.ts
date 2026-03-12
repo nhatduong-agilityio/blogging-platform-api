@@ -4,6 +4,7 @@ export const ERROR_MESSAGES = {
   BAD_REQUEST: 'Invalid request body',
   FORBIDDEN: 'Insufficient permissions to access this resource',
   INTERNAL_SERVER_ERROR: 'Internal server error',
+  UNAUTHORIZED: 'Unauthorized',
 
   // Post related messages
   POST_CREATION_FAILED: 'Failed to create post',

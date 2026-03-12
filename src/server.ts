@@ -30,6 +30,11 @@ import { purgeExpiredKeys } from './middlewares/idempotency.js';
 // Entities
 import { PostEntity } from './entity/post.js';
 import { IdempotencyKeyEntity } from './entity/idempotency.js';
+import { UserEntity } from './entity/user.js';
+import { UserRepository } from './repositories/user.js';
+import { AuthService } from './services/auth.js';
+import { AuthController } from './controllers/auth.js';
+import { createAuthRoutes } from './routes/auth.js';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 
@@ -39,11 +44,16 @@ const dataSource = await initializeDb();
 // TypeORM repositories
 const postTypeOrmRepo = dataSource.getRepository(PostEntity);
 const idempotencyTypeOrmRepo = dataSource.getRepository(IdempotencyKeyEntity);
+const authTypeOrmRepo = dataSource.getRepository(UserEntity);
 
 // Posts
 const postRepository = new PostRepository(postTypeOrmRepo);
 const postService = new PostService(postRepository);
 const postController = new PostController(postService);
+
+const authRepository = new UserRepository(authTypeOrmRepo);
+const authService = new AuthService(authRepository);
+const authController = new AuthController(authService);
 
 // Purge idempotency keys that have passed their 24-hour TTL.
 // Runs once on boot; a production app could also use setInterval.
@@ -53,12 +63,17 @@ if (purged > 0) {
 }
 
 const postRoutes = createPostRoutes(postController, idempotencyTypeOrmRepo);
+const authRoutes = createAuthRoutes(authController);
 
 // Register routes
 const app = createApp([
   {
-    path: API_PREFIX,
+    path: `${API_PREFIX}/posts`,
     router: postRoutes
+  },
+  {
+    path: `${API_PREFIX}/auth`,
+    router: authRoutes
   }
 ]);
 
