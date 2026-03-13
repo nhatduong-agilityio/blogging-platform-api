@@ -1,81 +1,99 @@
-import type { Request, Response } from 'express';
+// Constants
+import { RESPONSE_STATUS_CODE } from '../constants/status-code.js';
+import { ERROR_MESSAGES } from '../constants/messages.js';
 
+// Types
+import type { Request, Response, NextFunction } from 'express';
 import type { AuthService } from '../services/auth.js';
+
+// Schemas
 import {
   loginSchema,
   refreshTokenSchema,
   registerSchema
 } from '../schemas/auth.js';
+
+// Utils
 import { handleZodError } from '../utils/zod.js';
 import { AppError } from '../utils/app-error.js';
-import { ERROR_MESSAGES } from '../constants/messages.js';
 import { sendSuccessResponse } from '../utils/response.js';
-import { RESPONSE_STATUS_CODE } from '../constants/status-code.js';
 
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(private readonly authService: AuthService) {}
+  register = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const result = registerSchema.safeParse(req.body);
+      if (!result.success) throw handleZodError(result.error);
 
-  register = async (req: Request, res: Response): Promise<void> => {
-    const parsed = registerSchema.parse(req.body);
+      const user = await this.authService.register(
+        result.data.email,
+        result.data.password
+      );
 
-    const result = await this.authService.register(
-      parsed.email,
-      parsed.password
-    );
-
-    sendSuccessResponse(res, result, RESPONSE_STATUS_CODE.CREATED);
-  };
-
-  login = async (req: Request, res: Response): Promise<void> => {
-    const result = loginSchema.safeParse(req.body);
-    const data = result.success ? result.data : undefined;
-
-    if (result && result.error) {
-      throw handleZodError(result.error);
+      sendSuccessResponse(res, user, RESPONSE_STATUS_CODE.CREATED);
+    } catch (err) {
+      next(err);
     }
-
-    const tokens = await this.authService.login(
-      data?.email ?? '',
-      data?.password ?? ''
-    );
-
-    res.json(tokens);
   };
 
-  refresh = async (req: Request, res: Response): Promise<void> => {
-    const result = refreshTokenSchema.safeParse(req.body);
-    const data = result.success ? result.data : undefined;
+  login = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const result = loginSchema.safeParse(req.body);
+      if (!result.success) throw handleZodError(result.error);
 
-    if (result && result.error) {
-      throw handleZodError(result.error);
+      const tokens = await this.authService.login(
+        result.data.email,
+        result.data.password
+      );
+
+      sendSuccessResponse(res, tokens);
+    } catch (err) {
+      next(err);
     }
-
-    const token = await this.authService.refresh(data?.refreshToken ?? '');
-
-    res.json(token);
   };
 
-  logout = async (req: Request, res: Response): Promise<void> => {
-    if (
-      !req as unknown as {
-        user: {
-          userId: number;
-        };
+  refresh = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const result = refreshTokenSchema.safeParse(req.body);
+      if (!result.success) throw handleZodError(result.error);
+
+      const token = await this.authService.refresh(result.data.refreshToken);
+
+      sendSuccessResponse(res, token);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  logout = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      // req.user is typed as Express.User (= JwtPayload) via express.d.ts
+      // authMiddleware ensures this is always set before we reach here.
+      if (!req.user) {
+        throw AppError.notFound(ERROR_MESSAGES.NOT_FOUND('User'));
       }
-    ) {
-      throw AppError.notFound(ERROR_MESSAGES.NOT_FOUND('User'));
+
+      await this.authService.logout(req.user.userId);
+
+      sendSuccessResponse(res, null, RESPONSE_STATUS_CODE.NO_CONTENT);
+    } catch (err) {
+      next(err);
     }
-
-    const userId = (
-      req as unknown as {
-        user: {
-          userId: number;
-        };
-      }
-    ).user.userId;
-
-    await this.authService.logout(userId);
-
-    sendSuccessResponse(res, null, RESPONSE_STATUS_CODE.NO_CONTENT);
   };
 }

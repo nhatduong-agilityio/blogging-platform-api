@@ -1,45 +1,43 @@
-import type { Request, Response, NextFunction } from 'express';
+import passport from 'passport';
 
-import { verifyAccessToken } from '../utils/jwt.js';
-import { sendErrorResponse } from '../utils/response.js';
-import type { JwtPayload } from '../types/auth.js';
+// Constants
 import { ERROR_MESSAGES } from '../constants/messages.js';
 import { RESPONSE_STATUS_CODE } from '../constants/status-code.js';
 
+// Types
+import type { Request, Response, NextFunction, RequestHandler } from 'express';
+import type { JwtPayload } from '../types/auth.js';
+
+// Utils
+import { sendErrorResponse } from '../utils/response.js';
+
 export function authMiddleware(
-  req: Request & { user?: JwtPayload },
+  req: Request,
   res: Response,
   next: NextFunction
 ): void {
-  const header = req.headers.authorization;
+  const handler = passport.authenticate(
+    'jwt',
+    { session: false },
+    (err: unknown, user: JwtPayload | false) => {
+      if (err) {
+        next(err);
+        return;
+      }
 
-  if (!header) {
-    sendErrorResponse(
-      res,
-      ERROR_MESSAGES.UNAUTHORIZED,
-      RESPONSE_STATUS_CODE.UNAUTHORIZED
-    );
-    return;
-  }
+      if (!user) {
+        sendErrorResponse(
+          res,
+          ERROR_MESSAGES.UNAUTHORIZED,
+          RESPONSE_STATUS_CODE.UNAUTHORIZED
+        );
+        return;
+      }
 
-  const token = header.split(' ')[1];
+      req.user = user;
+      next();
+    }
+  ) as RequestHandler;
 
-  if (!token) {
-    sendErrorResponse(
-      res,
-      ERROR_MESSAGES.UNAUTHORIZED,
-      RESPONSE_STATUS_CODE.UNAUTHORIZED
-    );
-    return;
-  }
-
-  try {
-    const payload = verifyAccessToken(token);
-
-    req.user = payload;
-
-    next();
-  } catch {
-    sendErrorResponse(res, 'Invalid token', RESPONSE_STATUS_CODE.UNAUTHORIZED);
-  }
+  handler(req, res, next);
 }
