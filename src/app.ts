@@ -1,4 +1,5 @@
 import express, { type Router, type Application } from 'express';
+import passport from 'passport';
 
 // Middlewares
 import { errorHandler, notFoundHandler } from './middlewares/error-handler.js';
@@ -18,15 +19,21 @@ export interface RouteConfig {
 export function createApp(routes: RouteConfig[]): Application {
   const app = express();
 
-  // Middleware to parse JSON bodies
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  // Global Middleware
+  app.use(express.json({ limit: '50kb' }));
+  app.use(express.urlencoded({ extended: true, limit: '50kb' }));
   app.use(requestLogger);
 
   // Rate limit middleware
   app.use(globalLimiter);
 
-  // Routes
+  //  Passport
+  // session: false — stateless JWT, no server-side sessions needed.
+  // Strategy is registered via configurePassport() in server.ts
+  // before this function is called.
+  app.use(passport.initialize());
+
+  //  Routes
   routes.forEach(route => {
     app.use(route.path, route.router);
   });

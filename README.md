@@ -1,6 +1,6 @@
 # 📝 Blog API
 
-A RESTful API for a personal blogging platform with full CRUD operations and search.
+A RESTful API for a personal blogging platform with full CRUD operations, search, and JWT authentication.
 
 Built with **TypeScript 5**, **Express 5**, **SQLite** via **TypeORM**, validated by **Zod** — managed by **pnpm**.
 
@@ -16,6 +16,10 @@ Built with **TypeScript 5**, **Express 5**, **SQLite** via **TypeORM**, validate
   - [Installation](#installation)
   - [Environment Variables](#environment-variables)
   - [API Reference](#api-reference)
+    - [Register](#register)
+    - [Login](#login)
+    - [Refresh Token](#refresh-token)
+    - [Logout](#logout)
     - [Get All Posts](#get-all-posts)
     - [Get Post by ID](#get-post-by-id)
     - [Create Post](#create-post)
@@ -28,9 +32,14 @@ Built with **TypeScript 5**, **Express 5**, **SQLite** via **TypeORM**, validate
     - [Generic Interfaces](#generic-interfaces)
     - [Interface vs Abstract Class](#interface-vs-abstract-class)
     - [`createApp(routes: RouteConfig[])` factory](#createapproutes-routeconfig-factory)
+  - [Authentication](#authentication)
+    - [Token types](#token-types)
+    - [How it works](#how-it-works)
+    - [`src/types/express.d.ts` — global type augmentation](#srctypesexpressdts--global-type-augmentation)
+    - [`src/configs/passport.ts`](#srcconfigspassportts)
   - [Rate Limiting](#rate-limiting)
   - [Idempotency](#idempotency)
-    - [How it works](#how-it-works)
+    - [How it works](#how-it-works-1)
     - [Usage](#usage)
     - [Rules](#rules)
     - [Cleanup](#cleanup)
@@ -42,13 +51,17 @@ Built with **TypeScript 5**, **Express 5**, **SQLite** via **TypeORM**, validate
 
 ## Features
 
-| Endpoint            | Method   | Description                              |
-| ------------------- | -------- | ---------------------------------------- |
-| `/api/v1/posts`     | `GET`    | Get all posts (supports `?term=` search) |
-| `/api/v1/posts/:id` | `GET`    | Get a single post by ID                  |
-| `/api/v1/posts`     | `POST`   | Create a new post (supports idempotency) |
-| `/api/v1/posts/:id` | `PUT`    | Update an existing post                  |
-| `/api/v1/posts/:id` | `DELETE` | Delete a post                            |
+| Endpoint                | Method   | Auth      | Description                              |
+| ----------------------- | -------- | --------- | ---------------------------------------- |
+| `/api/v1/auth/register` | `POST`   | —         | Register a new user                      |
+| `/api/v1/auth/login`    | `POST`   | —         | Login and receive tokens                 |
+| `/api/v1/auth/refresh`  | `POST`   | —         | Get a new access token                   |
+| `/api/v1/auth/logout`   | `POST`   | ✅ Bearer | Logout and invalidate refresh token      |
+| `/api/v1/posts`         | `GET`    | —         | Get all posts (supports `?term=` search) |
+| `/api/v1/posts/:id`     | `GET`    | —         | Get a single post by ID                  |
+| `/api/v1/posts`         | `POST`   | ✅ Bearer | Create a new post (supports idempotency) |
+| `/api/v1/posts/:id`     | `PUT`    | ✅ Bearer | Update an existing post                  |
+| `/api/v1/posts/:id`     | `DELETE` | ✅ Bearer | Delete a post                            |
 
 ---
 
@@ -57,19 +70,25 @@ Built with **TypeScript 5**, **Express 5**, **SQLite** via **TypeORM**, validate
 ```text
 blog-api/
 ├── src/
+│   ├── configs/
+│   │   └── passport.ts         # Passport JwtStrategy configuration
 │   ├── constants/
 │   │   ├── idempotency.ts      # TTL, header name, UUID regex constants
+│   │   ├── jwt.ts              # Token secrets and expiry constants
 │   │   ├── messages.ts         # Shared error/success message strings
-│   │   ├── route.ts            # Base route path constants (API_V1_PREFIX)
+│   │   ├── route.ts            # Base route path constants (API_PREFIX)
 │   │   └── status-code.ts      # HTTP status code constants
 │   ├── controllers/
+│   │   ├── auth.ts             # AuthController — register, login, refresh, logout
 │   │   └── post.ts             # PostController — HTTP in/out only
 │   ├── database/
 │   │   └── connection.ts       # TypeORM DataSource init & close
 │   ├── entity/
 │   │   ├── idempotency.ts      # IdempotencyKeyEntity — TypeORM entity
-│   │   └── post.ts             # PostEntity — TypeORM entity
+│   │   ├── post.ts             # PostEntity — TypeORM entity
+│   │   └── user.ts             # UserEntity — TypeORM entity
 │   ├── middlewares/
+│   │   ├── auth.ts             # authMiddleware — passport.authenticate('jwt')
 │   │   ├── error-handler.ts    # Global error handler + 404 handler
 │   │   ├── idempotency.ts      # Idempotency middleware + purgeExpiredKeys
 │   │   ├── rate-limit.ts       # globalLimiter + writeLimiter
@@ -77,20 +96,27 @@ blog-api/
 │   ├── migration/              # TypeORM migration files (production)
 │   ├── repositories/
 │   │   ├── base.ts             # Abstract BaseRepository<E, T, C, U>
-│   │   └── post.ts             # PostRepository — wraps TypeORM Repository<PostEntity>
+│   │   ├── post.ts             # PostRepository — wraps TypeORM Repository<PostEntity>
+│   │   └── user.ts             # UserRepository — wraps TypeORM Repository<UserEntity>
 │   ├── routes/
-│   │   └── post.ts             # createPostRouter(controller, idempotencyRepo) factory
+│   │   ├── auth.ts             # createAuthRoutes(controller) factory
+│   │   └── post.ts             # createPostRoutes(controller, idempotencyRepo) factory
 │   ├── schemas/
+│   │   ├── auth.ts             # Zod schemas: registerSchema, loginSchema, refreshTokenSchema
 │   │   └── post.ts             # Zod schemas: createPostSchema, updatePostSchema
 │   ├── services/
+│   │   ├── auth.ts             # AuthService — register, login, refresh, logout logic
 │   │   ├── base.ts             # Abstract BaseService<T, C, U>
 │   │   └── post.ts             # PostService — business logic for posts
 │   ├── types/
 │   │   ├── api.ts              # ApiSuccessResponse, ApiErrorResponse, ApiResponse<T>
+│   │   ├── auth.ts             # JwtPayload, User, IUserRepository
 │   │   ├── common.ts           # IRepository<T,C,U>, IService<T,C,U> generics (async)
+│   │   ├── express.d.ts        # Global Express.User augmentation (req.user typing)
 │   │   └── post.ts             # Post, IPostRepository, IPostService
 │   ├── utils/
 │   │   ├── app-error.ts        # AppError class with static factory methods
+│   │   ├── jwt.ts              # generateAccessToken, generateRefreshToken, verify helpers
 │   │   ├── response.ts         # sendSuccess / sendError helpers
 │   │   └── zod.ts              # Zod error → field error map converter
 │   ├── app.ts                  # Express app factory: createApp(routes)
@@ -160,11 +186,15 @@ pnpm start
 
 ## Environment Variables
 
-| Variable   | Default          | Description                                 |
-| ---------- | ---------------- | ------------------------------------------- |
-| `PORT`     | `3000`           | Server port                                 |
-| `NODE_ENV` | `development`    | Environment (`development` \| `production`) |
-| `DB_PATH`  | `./data/blog.db` | Path to the SQLite database file            |
+| Variable             | Default          | Description                                 |
+| -------------------- | ---------------- | ------------------------------------------- |
+| `PORT`               | `3000`           | Server port                                 |
+| `NODE_ENV`           | `development`    | Environment (`development` \| `production`) |
+| `DB_PATH`            | `./data/blog.db` | Path to the SQLite database file            |
+| `JWT_ACCESS_SECRET`  | `access_secret`  | Secret key for signing access tokens        |
+| `JWT_REFRESH_SECRET` | `refresh_secret` | Secret key for signing refresh tokens       |
+
+> ⚠️ Always set strong secrets for `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` in production.
 
 > In production, set `NODE_ENV=production` — this disables `synchronize` and requires explicit migrations from `src/migration/`.
 
@@ -173,6 +203,103 @@ pnpm start
 ## API Reference
 
 All routes are prefixed with `/api/v1`.
+
+### Register
+
+```
+POST /api/v1/auth/register
+Content-Type: application/json
+```
+
+**Request body:**
+
+```json
+{
+  "email": "user@example.com",
+  "password": "secret123"
+}
+```
+
+| Field      | Type     | Rules                          |
+| ---------- | -------- | ------------------------------ |
+| `email`    | `string` | Required, valid email format   |
+| `password` | `string` | Required, min 6, max 100 chars |
+
+**Response `201`:**
+
+```json
+{
+  "success": true,
+  "data": { "id": 1, "email": "user@example.com" }
+}
+```
+
+---
+
+### Login
+
+```
+POST /api/v1/auth/login
+Content-Type: application/json
+```
+
+**Request body:**
+
+```json
+{
+  "email": "user@example.com",
+  "password": "secret123"
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "accessToken": "<jwt>",
+    "refreshToken": "<jwt>"
+  }
+}
+```
+
+---
+
+### Refresh Token
+
+```
+POST /api/v1/auth/refresh
+Content-Type: application/json
+```
+
+**Request body:**
+
+```json
+{ "refreshToken": "<jwt>" }
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": { "accessToken": "<jwt>" }
+}
+```
+
+---
+
+### Logout
+
+```
+POST /api/v1/auth/logout
+Authorization: Bearer <accessToken>
+```
+
+**Response `204`:** no content — refresh token is invalidated in DB.
+
+---
 
 ### Get All Posts
 
@@ -228,6 +355,7 @@ GET /api/v1/posts/:id
 
 ```
 POST /api/v1/posts
+Authorization: Bearer <accessToken>
 Content-Type: application/json
 ```
 
@@ -247,7 +375,7 @@ Content-Type: application/json
 | `title`    | `string`   | Required, non-empty, max 255 chars |
 | `content`  | `string`   | Required, non-empty                |
 | `category` | `string`   | Required, non-empty, max 100 chars |
-| `tags`     | `string[]` | Optional array, defaults to `[]`   |
+| `tags`     | `string[]` | Required, min 1 item               |
 
 **Response `201`:** created post object
 
@@ -273,6 +401,7 @@ Content-Type: application/json
 
 ```
 PUT /api/v1/posts/:id
+Authorization: Bearer <accessToken>
 Content-Type: application/json
 ```
 
@@ -288,6 +417,7 @@ Request body — same shape as create. All fields required.
 
 ```
 DELETE /api/v1/posts/:id
+Authorization: Bearer <accessToken>
 ```
 
 **Response `204`:** no content
@@ -299,18 +429,32 @@ DELETE /api/v1/posts/:id
 
 Tables are managed by **TypeORM entities** in `src/entity/`. In development, `synchronize: true` auto-creates and alters tables on startup. In production, run migrations from `src/migration/`.
 
+**`users` table — via `UserEntity`:**
+
+```typescript
+@Entity('users')
+export class UserEntity {
+  @PrimaryGeneratedColumn() id: number;
+  @Column({ type: 'text', unique: true }) email: string;
+  @Column({ type: 'text' }) password: string; // bcrypt hash
+  @Column({ name: 'refresh_token', nullable: true }) refreshToken:
+    | string
+    | null;
+}
+```
+
 **`posts` table — via `PostEntity`:**
 
 ```typescript
 @Entity('posts')
 export class PostEntity {
-  @PrimaryGeneratedColumn()       id: number;
-  @Column({ type: 'text' })       title: string;
-  @Column({ type: 'text' })       content: string;
-  @Column({ type: 'text' })       category: string;
-  @Column({ type: 'text', transformer: { ... } }) tags: string[]; // stored as JSON
-  @CreateDateColumn()             createdAt: Date;
-  @UpdateDateColumn()             updatedAt: Date;
+  @PrimaryGeneratedColumn()                          id: number;
+  @Column({ type: 'text' })                          title: string;
+  @Column({ type: 'text' })                          content: string;
+  @Column({ type: 'text' })                          category: string;
+  @Column({ type: 'text', transformer: { ... } })    tags: string[];  // stored as JSON
+  @CreateDateColumn()                                createdAt: Date;
+  @UpdateDateColumn()                                updatedAt: Date;
 }
 ```
 
@@ -361,16 +505,24 @@ HTTP Request
 ```
 server.ts  (composition root)
     │
-    ├── initDb()                              → DataSource
-    ├── dataSource.getRepository(PostEntity) → Repository<PostEntity>
-    ├── new PostRepository(typeormRepo)       → IPostRepository
-    ├── new PostService(postRepository)       → IPostService
-    ├── new PostController(postService)       → PostController
-    ├── createPostRouter(controller, idempotencyRepo) → Router
-    └── createApp([{ path, router }])         → Express app
+    ├── initializeDb()                           → DataSource
+    │
+    ├── dataSource.getRepository(UserEntity)     → Repository<UserEntity>
+    ├── new UserRepository(userTypeOrmRepo)      → IUserRepository
+    ├── new AuthService(userRepository)          → AuthService
+    ├── new AuthController(authService)          → AuthController
+    ├── createAuthRoutes(authController)         → Router
+    │
+    ├── dataSource.getRepository(PostEntity)     → Repository<PostEntity>
+    ├── new PostRepository(postTypeOrmRepo)      → IPostRepository
+    ├── new PostService(postRepository)          → IPostService
+    ├── new PostController(postService)          → PostController
+    ├── createPostRoutes(controller, idempotencyRepo) → Router
+    │
+    ├── configurePassport(userRepository)        → registers JwtStrategy
+    │
+    └── createApp([{ path, router }, ...])       → Express app
 ```
-
-Adding a new resource (e.g. `User`) only requires adding its entity, repository, service, controller, and wiring in `server.ts` — no other file needs to change.
 
 ---
 
@@ -383,19 +535,17 @@ Adding a new resource (e.g. `User`) only requires adding its entity, repository,
 ```typescript
 // PostRepository only needs to implement:
 //   toDomain(entity: PostEntity): Post
-//   findAll(term?)
-//   create(input)
-//   update(id, input)
+//   findAll(term?), create(input), update(id, input)
 //
 // findById and delete are inherited — no SQL written twice
 
 class PostRepository
-  extends BaseRepository<PostEntity, Post, CreatePostDto, UpdatePostDto>
+  extends BaseRepository<PostEntity, Post, CreatePostSchema, UpdatePostSchema>
   implements IPostRepository {
     protected toDomain(entity: PostEntity): Post { ... }
     async findAll(term?: string): Promise<Post[]> { ... }
-    async create(input: CreatePostDto): Promise<Post> { ... }
-    async update(id: number, input: UpdatePostDto): Promise<Post | undefined> { ... }
+    async create(input: CreatePostSchema): Promise<Post> { ... }
+    async update(id: number, input: UpdatePostSchema): Promise<Post | undefined> { ... }
   }
 ```
 
@@ -405,16 +555,14 @@ class PostRepository
 // PostService only needs to implement:
 //   getAll, create, update
 //   get resourceName(): string  ← drives "Post not found" messages
-//
-// getById and delete (with AppError.notFound) are inherited
 
 class PostService
-  extends BaseService<Post, CreatePostDto, UpdatePostDto>
+  extends BaseService<Post, CreatePostSchema, UpdatePostSchema>
   implements IPostService {
     protected readonly resourceName = 'Post';
     async getAll(term?: string): Promise<Post[]> { ... }
-    async create(input: CreatePostDto): Promise<Post> { ... }
-    async update(id: number, input: UpdatePostDto): Promise<Post> { ... }
+    async create(input: CreatePostSchema): Promise<Post> { ... }
+    async update(id: number, input: UpdatePostSchema): Promise<Post> { ... }
   }
 ```
 
@@ -432,26 +580,77 @@ All type contracts live in `src/types/common.ts`. All methods are `async` — Ty
 
 ### Interface vs Abstract Class
 
-| Used for                                               | Why                                                                                                     |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `IPostRepository`, `IPostService` — **interfaces**     | Contract only — controller/service depend on abstractions, not concrete classes                         |
-| `BaseRepository`, `BaseService` — **abstract classes** | Share real async implementation (`findById`, `delete`, `getById`, not-found guard) across all resources |
+| Used for                                                              | Why                                                                                                     |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `IPostRepository`, `IPostService`, `IUserRepository` — **interfaces** | Contract only — controller/service depend on abstractions, not concrete classes                         |
+| `BaseRepository`, `BaseService` — **abstract classes**                | Share real async implementation (`findById`, `delete`, `getById`, not-found guard) across all resources |
 
 ### `createApp(routes: RouteConfig[])` factory
 
 `app.ts` accepts an array of `{ path, router }` pairs and never imports any resource directly:
 
 ```typescript
-// server.ts — only place new resources are registered
 createApp([
+  { path: '/api/v1/auth', router: createAuthRoutes(authController) },
   {
     path: '/api/v1/posts',
-    router: createPostRouter(postController, idempotencyRepo)
-  },
-  { path: '/api/v1/users', router: createUserRouter(userController) }, // future
-  { path: '/api/v1/articles', router: createArticleRouter(articleController) } // future
+    router: createPostRoutes(postController, idempotencyRepo)
+  }
 ]);
 ```
+
+---
+
+## Authentication
+
+The API uses **stateless JWT authentication** via [Passport.js](https://www.passportjs.org/) with the `passport-jwt` strategy.
+
+### Token types
+
+| Token          | Expiry | Purpose                                                    |
+| -------------- | ------ | ---------------------------------------------------------- |
+| `accessToken`  | 15 min | Sent as `Authorization: Bearer` on every protected request |
+| `refreshToken` | 7 days | Stored in DB — used to issue new access tokens             |
+
+### How it works
+
+```
+Login → accessToken (15m) + refreshToken (7d) stored in DB
+           │
+           ├── Protected request → Authorization: Bearer <accessToken>
+           │        ↓
+           │   passport-jwt extracts + verifies token
+           │        ↓
+           │   JwtStrategy fetches user from DB (account still exists?)
+           │        ↓
+           │   req.user = { userId, email }
+           │
+           ├── Access token expired → POST /auth/refresh
+           │        ↓
+           │   verify refreshToken signature
+           │        ↓
+           │   compare with DB value (revocation check)
+           │        ↓
+           │   issue new accessToken
+           │
+           └── Logout → DELETE refresh_token from DB → token revoked immediately
+```
+
+### `src/types/express.d.ts` — global type augmentation
+
+`req.user` is typed as `JwtPayload` globally across the entire app — no inline casting needed:
+
+```typescript
+declare global {
+  namespace Express {
+    interface User extends JwtPayload {} // { userId: number; email: string }
+  }
+}
+```
+
+### `src/configs/passport.ts`
+
+`configurePassport(userRepository)` is called once in `server.ts` before `createApp()`, registering the `JwtStrategy` with the injected repository — keeping Passport configuration testable and decoupled from the global module scope.
 
 ---
 
@@ -498,6 +697,7 @@ Request arrives
 
 ```http
 POST /api/v1/posts
+Authorization: Bearer <accessToken>
 Content-Type: application/json
 Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000
 
@@ -545,16 +745,20 @@ All errors follow a consistent JSON shape:
 
 `errors` is only present on `400` validation failures.
 
-| Scenario                   | Status | Message                             |
-| -------------------------- | ------ | ----------------------------------- |
-| Post not found             | `404`  | `Post not found`                    |
-| Invalid ID param           | `400`  | `Invalid post ID`                   |
-| Missing required field     | `400`  | `Validation failed` + `errors` map  |
-| Invalid Idempotency-Key    | `400`  | `Invalid idempotency-key header...` |
-| Rate limit exceeded        | `429`  | `Too many requests...`              |
-| Route not found            | `404`  | `Route METHOD /path not found`      |
-| Unhandled exception (dev)  | `500`  | Original error message              |
-| Unhandled exception (prod) | `500`  | `Internal server error`             |
+| Scenario                   | Status | Message                                   |
+| -------------------------- | ------ | ----------------------------------------- |
+| Post not found             | `404`  | `Post not found`                          |
+| Invalid ID param           | `400`  | `Invalid post ID`                         |
+| Missing required field     | `400`  | `Validation failed` + `errors` map        |
+| Email already exists       | `400`  | `Email already exists`                    |
+| Invalid credentials        | `400`  | `Invalid credentials`                     |
+| Missing or invalid token   | `401`  | `Unauthorized — missing or invalid token` |
+| Invalid refresh token      | `400`  | `Invalid refresh token`                   |
+| Invalid Idempotency-Key    | `400`  | `Invalid idempotency-key header...`       |
+| Rate limit exceeded        | `429`  | `Too many requests...`                    |
+| Route not found            | `404`  | `Route METHOD /path not found`            |
+| Unhandled exception (dev)  | `500`  | Original error message                    |
+| Unhandled exception (prod) | `500`  | `Internal server error`                   |
 
 ---
 
@@ -584,11 +788,11 @@ pnpm format:check  # Check formatting without writing
 Uses [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
-feat: add idempotency support to POST /posts
+feat: add JWT authentication with passport-jwt
 fix: handle legacy comma-separated tags format
 refactor: migrate raw SQL to TypeORM entities
-docs: update README with rate limiting section
-chore: upgrade typeorm to 0.3.28
+docs: update README with authentication section
+chore: add bcryptjs and passport dependencies
 ```
 
 **Allowed types:** `feat` | `fix` | `docs` | `style` | `refactor` | `test` | `chore` | `perf` | `ci` | `revert`
