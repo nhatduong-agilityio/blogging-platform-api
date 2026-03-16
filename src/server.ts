@@ -22,14 +22,17 @@ import { UserRepository } from './repositories/user.js';
 // Services
 import { PostService } from './services/post.js';
 import { AuthService } from './services/auth.js';
+import { UserService } from './services/user.js';
 
 // Controllers
 import { PostController } from './controllers/post.js';
 import { AuthController } from './controllers/auth.js';
+import { UserController } from './controllers/user.js';
 
 // Routes
 import { createPostRoutes } from './routes/post.js';
 import { createAuthRoutes } from './routes/auth.js';
+import { createUserRoutes } from './routes/user.js';
 
 // Middlewares
 import { purgeExpiredKeys } from './middlewares/idempotency.js';
@@ -57,6 +60,10 @@ const userRepository = new UserRepository(userTypeOrmRepo);
 const authService = new AuthService(userRepository);
 const authController = new AuthController(authService);
 
+// Users
+const userService = new UserService(userRepository);
+const userController = new UserController(userService);
+
 // Posts
 const postRepository = new PostRepository(postTypeOrmRepo);
 const postService = new PostService(postRepository);
@@ -75,6 +82,7 @@ if (purged > 0) {
 
 const postRoutes = createPostRoutes(postController, idempotencyTypeOrmRepo);
 const authRoutes = createAuthRoutes(authController);
+const userRoutes = createUserRoutes(userController);
 
 // Register routes
 const app = createApp([
@@ -82,7 +90,8 @@ const app = createApp([
   {
     path: `${API_PREFIX}/posts`,
     router: postRoutes
-  }
+  },
+  { path: `${API_PREFIX}/users`, router: userRoutes }
 ]);
 
 // Start the server

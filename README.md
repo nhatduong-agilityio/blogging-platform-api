@@ -20,6 +20,7 @@ Built with **TypeScript 5**, **Express 5**, **SQLite** via **TypeORM**, validate
     - [Login](#login)
     - [Refresh Token](#refresh-token)
     - [Logout](#logout)
+    - [Get Current User](#get-current-user)
     - [Get All Posts](#get-all-posts)
     - [Get Post by ID](#get-post-by-id)
     - [Create Post](#create-post)
@@ -37,9 +38,15 @@ Built with **TypeScript 5**, **Express 5**, **SQLite** via **TypeORM**, validate
     - [How it works](#how-it-works)
     - [`src/types/express.d.ts` — global type augmentation](#srctypesexpressdts--global-type-augmentation)
     - [`src/configs/passport.ts`](#srcconfigspassportts)
+  - [Role-based Authorization](#role-based-authorization)
+    - [Roles](#roles)
+    - [How it works](#how-it-works-1)
+    - [`src/middlewares/authorize.ts`](#srcmiddlewaresauthorizets)
+    - [Promoting a user to admin](#promoting-a-user-to-admin)
+    - [`src/constants/role.ts`](#srcconstantsrolets)
   - [Rate Limiting](#rate-limiting)
   - [Idempotency](#idempotency)
-    - [How it works](#how-it-works-1)
+    - [How it works](#how-it-works-2)
     - [Usage](#usage)
     - [Rules](#rules)
     - [Cleanup](#cleanup)
@@ -51,17 +58,18 @@ Built with **TypeScript 5**, **Express 5**, **SQLite** via **TypeORM**, validate
 
 ## Features
 
-| Endpoint                | Method   | Auth      | Description                              |
-| ----------------------- | -------- | --------- | ---------------------------------------- |
-| `/api/v1/auth/register` | `POST`   | —         | Register a new user                      |
-| `/api/v1/auth/login`    | `POST`   | —         | Login and receive tokens                 |
-| `/api/v1/auth/refresh`  | `POST`   | —         | Get a new access token                   |
-| `/api/v1/auth/logout`   | `POST`   | ✅ Bearer | Logout and invalidate refresh token      |
-| `/api/v1/posts`         | `GET`    | —         | Get all posts (supports `?term=` search) |
-| `/api/v1/posts/:id`     | `GET`    | —         | Get a single post by ID                  |
-| `/api/v1/posts`         | `POST`   | ✅ Bearer | Create a new post (supports idempotency) |
-| `/api/v1/posts/:id`     | `PUT`    | ✅ Bearer | Update an existing post                  |
-| `/api/v1/posts/:id`     | `DELETE` | ✅ Bearer | Delete a post                            |
+| Endpoint                | Method   | Auth      | Role    | Description                              |
+| ----------------------- | -------- | --------- | ------- | ---------------------------------------- |
+| `/api/v1/auth/register` | `POST`   | —         | —       | Register a new user                      |
+| `/api/v1/auth/login`    | `POST`   | —         | —       | Login and receive tokens                 |
+| `/api/v1/auth/refresh`  | `POST`   | —         | —       | Get a new access token                   |
+| `/api/v1/auth/logout`   | `POST`   | ✅ Bearer | any     | Logout and invalidate refresh token      |
+| `/api/v1/users/me`      | `GET`    | ✅ Bearer | any     | Get current authenticated user profile   |
+| `/api/v1/posts`         | `GET`    | ✅ Bearer | any     | Get all posts (supports `?term=` search) |
+| `/api/v1/posts/:id`     | `GET`    | ✅ Bearer | any     | Get a single post by ID                  |
+| `/api/v1/posts`         | `POST`   | ✅ Bearer | `admin` | Create a new post (supports idempotency) |
+| `/api/v1/posts/:id`     | `PUT`    | ✅ Bearer | `admin` | Update an existing post                  |
+| `/api/v1/posts/:id`     | `DELETE` | ✅ Bearer | `admin` | Delete a post                            |
 
 ---
 
@@ -76,19 +84,21 @@ blog-api/
 │   │   ├── idempotency.ts      # TTL, header name, UUID regex constants
 │   │   ├── jwt.ts              # Token secrets and expiry constants
 │   │   ├── messages.ts         # Shared error/success message strings
+│   │   ├── user.ts             # Role const object: admin | user
 │   │   ├── route.ts            # Base route path constants (API_PREFIX)
 │   │   └── status-code.ts      # HTTP status code constants
 │   ├── controllers/
 │   │   ├── auth.ts             # AuthController — register, login, refresh, logout
-│   │   └── post.ts             # PostController — HTTP in/out only
+│   │   ├── post.ts             # PostController — HTTP in/out only
+│   │   └── user.ts             # UserController — getMe
 │   ├── database/
 │   │   └── connection.ts       # TypeORM DataSource init & close
 │   ├── entity/
 │   │   ├── idempotency.ts      # IdempotencyKeyEntity — TypeORM entity
 │   │   ├── post.ts             # PostEntity — TypeORM entity
-│   │   └── user.ts             # UserEntity — TypeORM entity
+│   │   └── user.ts             # UserEntity — TypeORM entity (includes role)
 │   ├── middlewares/
-│   │   ├── auth.ts             # authMiddleware — passport.authenticate('jwt')
+│   │   ├── auth.ts             # authMiddleware — passport.authenticate('jwt'), authorize(...roles) — role-based access control
 │   │   ├── error-handler.ts    # Global error handler + 404 handler
 │   │   ├── idempotency.ts      # Idempotency middleware + purgeExpiredKeys
 │   │   ├── rate-limit.ts       # globalLimiter + writeLimiter
@@ -100,17 +110,19 @@ blog-api/
 │   │   └── user.ts             # UserRepository — wraps TypeORM Repository<UserEntity>
 │   ├── routes/
 │   │   ├── auth.ts             # createAuthRoutes(controller) factory
-│   │   └── post.ts             # createPostRoutes(controller, idempotencyRepo) factory
+│   │   ├── post.ts             # createPostRoutes(controller, idempotencyRepo) factory
+│   │   └── user.ts             # createUserRoutes(controller) factory
 │   ├── schemas/
 │   │   ├── auth.ts             # Zod schemas: registerSchema, loginSchema, refreshTokenSchema
 │   │   └── post.ts             # Zod schemas: createPostSchema, updatePostSchema
 │   ├── services/
 │   │   ├── auth.ts             # AuthService — register, login, refresh, logout logic
 │   │   ├── base.ts             # Abstract BaseService<T, C, U>
-│   │   └── post.ts             # PostService — business logic for posts
+│   │   ├── post.ts             # PostService — business logic for posts
+│   │   └── user.ts             # UserService — getMe
 │   ├── types/
 │   │   ├── api.ts              # ApiSuccessResponse, ApiErrorResponse, ApiResponse<T>
-│   │   ├── auth.ts             # JwtPayload, User, IUserRepository
+│   │   ├── auth.ts             # JwtPayload (with role), User, IUserRepository
 │   │   ├── common.ts           # IRepository<T,C,U>, IService<T,C,U> generics (async)
 │   │   ├── express.d.ts        # Global Express.User augmentation (req.user typing)
 │   │   └── post.ts             # Post, IPostRepository, IPostService
@@ -230,9 +242,11 @@ Content-Type: application/json
 ```json
 {
   "success": true,
-  "data": { "id": 1, "email": "user@example.com" }
+  "data": { "id": 1, "email": "user@example.com", "role": "user" }
 }
 ```
+
+> All self-registered users receive the `user` role by default. Promote to `admin` via DB — never through the API.
 
 ---
 
@@ -301,6 +315,32 @@ Authorization: Bearer <accessToken>
 
 ---
 
+### Get Current User
+
+```
+GET /api/v1/users/me
+Authorization: Bearer <accessToken>
+```
+
+Returns the profile of the currently authenticated user. Available to all authenticated users regardless of role.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 1,
+    "email": "user@example.com",
+    "role": "user"
+  }
+}
+```
+
+**Response `401`:** missing or invalid token.
+
+---
+
 ### Get All Posts
 
 ```
@@ -355,7 +395,7 @@ GET /api/v1/posts/:id
 
 ```
 POST /api/v1/posts
-Authorization: Bearer <accessToken>
+Authorization: Bearer <accessToken>   (admin only)
 Content-Type: application/json
 ```
 
@@ -378,20 +418,9 @@ Content-Type: application/json
 | `tags`     | `string[]` | Required, min 1 item               |
 
 **Response `201`:** created post object
-
-**Response `400`:**
-
-```json
-{
-  "success": false,
-  "status": "error",
-  "message": "Validation failed",
-  "errors": {
-    "title": ["Title is required"],
-    "content": ["Content cannot be empty"]
-  }
-}
-```
+**Response `400`:** validation errors
+**Response `401`:** missing or invalid token
+**Response `403`:** authenticated but not admin
 
 > `POST /api/v1/posts` supports the `Idempotency-Key` header — see [Idempotency](#idempotency).
 
@@ -401,7 +430,7 @@ Content-Type: application/json
 
 ```
 PUT /api/v1/posts/:id
-Authorization: Bearer <accessToken>
+Authorization: Bearer <accessToken>   (admin only)
 Content-Type: application/json
 ```
 
@@ -409,6 +438,8 @@ Request body — same shape as create. All fields required.
 
 **Response `200`:** updated post object
 **Response `400`:** validation errors
+**Response `401`:** missing or invalid token
+**Response `403`:** authenticated but not admin
 **Response `404`:** post not found
 
 ---
@@ -417,10 +448,12 @@ Request body — same shape as create. All fields required.
 
 ```
 DELETE /api/v1/posts/:id
-Authorization: Bearer <accessToken>
+Authorization: Bearer <accessToken>   (admin only)
 ```
 
 **Response `204`:** no content
+**Response `401`:** missing or invalid token
+**Response `403`:** authenticated but not admin
 **Response `404`:** post not found
 
 ---
@@ -437,6 +470,7 @@ export class UserEntity {
   @PrimaryGeneratedColumn() id: number;
   @Column({ type: 'text', unique: true }) email: string;
   @Column({ type: 'text' }) password: string; // bcrypt hash
+  @Column({ type: 'text', default: Role.USER }) role: Role; // 'admin' | 'user'
   @Column({ name: 'refresh_token', nullable: true }) refreshToken:
     | string
     | null;
@@ -448,13 +482,13 @@ export class UserEntity {
 ```typescript
 @Entity('posts')
 export class PostEntity {
-  @PrimaryGeneratedColumn()                          id: number;
-  @Column({ type: 'text' })                          title: string;
-  @Column({ type: 'text' })                          content: string;
-  @Column({ type: 'text' })                          category: string;
-  @Column({ type: 'text', transformer: { ... } })    tags: string[];  // stored as JSON
-  @CreateDateColumn()                                createdAt: Date;
-  @UpdateDateColumn()                                updatedAt: Date;
+  @PrimaryGeneratedColumn()                       id: number;
+  @Column({ type: 'text' })                       title: string;
+  @Column({ type: 'text' })                       content: string;
+  @Column({ type: 'text' })                       category: string;
+  @Column({ type: 'text', transformer: { ... } }) tags: string[];  // stored as JSON
+  @CreateDateColumn()                             createdAt: Date;
+  @UpdateDateColumn()                             updatedAt: Date;
 }
 ```
 
@@ -505,23 +539,26 @@ HTTP Request
 ```
 server.ts  (composition root)
     │
-    ├── initializeDb()                           → DataSource
+    ├── initializeDb()                                → DataSource
     │
-    ├── dataSource.getRepository(UserEntity)     → Repository<UserEntity>
-    ├── new UserRepository(userTypeOrmRepo)      → IUserRepository
-    ├── new AuthService(userRepository)          → AuthService
-    ├── new AuthController(authService)          → AuthController
-    ├── createAuthRoutes(authController)         → Router
+    ├── dataSource.getRepository(UserEntity)          → Repository<UserEntity>
+    ├── new UserRepository(userTypeOrmRepo)            → IUserRepository
+    ├── new AuthService(userRepository)               → AuthService
+    ├── new AuthController(authService)               → AuthController
+    ├── createAuthRoutes(authController)              → Router
+    ├── new UserService(userRepository)               → UserService
+    ├── new UserController(userService)               → UserController
+    ├── createUserRoutes(userController)              → Router
     │
-    ├── dataSource.getRepository(PostEntity)     → Repository<PostEntity>
-    ├── new PostRepository(postTypeOrmRepo)      → IPostRepository
-    ├── new PostService(postRepository)          → IPostService
-    ├── new PostController(postService)          → PostController
+    ├── dataSource.getRepository(PostEntity)          → Repository<PostEntity>
+    ├── new PostRepository(postTypeOrmRepo)            → IPostRepository
+    ├── new PostService(postRepository)               → IPostService
+    ├── new PostController(postService)               → PostController
     ├── createPostRoutes(controller, idempotencyRepo) → Router
     │
-    ├── configurePassport(userRepository)        → registers JwtStrategy
+    ├── configurePassport(userRepository)             → registers JwtStrategy
     │
-    └── createApp([{ path, router }, ...])       → Express app
+    └── createApp([{ path, router }, ...])            → Express app
 ```
 
 ---
@@ -592,6 +629,7 @@ All type contracts live in `src/types/common.ts`. All methods are `async` — Ty
 ```typescript
 createApp([
   { path: '/api/v1/auth', router: createAuthRoutes(authController) },
+  { path: '/api/v1/users', router: createUserRoutes(userController) },
   {
     path: '/api/v1/posts',
     router: createPostRoutes(postController, idempotencyRepo)
@@ -623,7 +661,7 @@ Login → accessToken (15m) + refreshToken (7d) stored in DB
            │        ↓
            │   JwtStrategy fetches user from DB (account still exists?)
            │        ↓
-           │   req.user = { userId, email }
+           │   req.user = { userId, email, role }
            │
            ├── Access token expired → POST /auth/refresh
            │        ↓
@@ -631,9 +669,9 @@ Login → accessToken (15m) + refreshToken (7d) stored in DB
            │        ↓
            │   compare with DB value (revocation check)
            │        ↓
-           │   issue new accessToken
+           │   issue new accessToken (with latest role from DB)
            │
-           └── Logout → DELETE refresh_token from DB → token revoked immediately
+           └── Logout → remove refresh_token from DB → revoked immediately
 ```
 
 ### `src/types/express.d.ts` — global type augmentation
@@ -643,7 +681,7 @@ Login → accessToken (15m) + refreshToken (7d) stored in DB
 ```typescript
 declare global {
   namespace Express {
-    interface User extends JwtPayload {} // { userId: number; email: string }
+    interface User extends JwtPayload {} // { userId: number; email: string; role: Role }
   }
 }
 ```
@@ -651,6 +689,72 @@ declare global {
 ### `src/configs/passport.ts`
 
 `configurePassport(userRepository)` is called once in `server.ts` before `createApp()`, registering the `JwtStrategy` with the injected repository — keeping Passport configuration testable and decoupled from the global module scope.
+
+---
+
+## Role-based Authorization
+
+The API implements role-based access control (RBAC) with two roles: `admin` and `user`.
+
+### Roles
+
+| Role    | Permissions                                        |
+| ------- | -------------------------------------------------- |
+| `user`  | Read all posts, manage own session (`/users/me`)   |
+| `admin` | Full access — all `user` permissions + write posts |
+
+### How it works
+
+Role is stored in the `users` table and included in the JWT payload on login. The `authorize(...roles)` middleware reads `req.user.role` — set by `authMiddleware` (passport-jwt) — without an extra DB query:
+
+```
+authMiddleware → authorize('admin') → controller
+     ↓                  ↓
+ verify JWT        check req.user.role
+ set req.user      403 if not in allowed roles
+```
+
+### `src/middlewares/authorize.ts`
+
+```typescript
+// Usage on routes:
+router.post('/', authMiddleware, authorize(Role.ADMIN), controller.createPost);
+router.put(
+  '/:id',
+  authMiddleware,
+  authorize(Role.ADMIN),
+  controller.updatePost
+);
+router.delete(
+  '/:id',
+  authMiddleware,
+  authorize(Role.ADMIN),
+  controller.deletePost
+);
+```
+
+### Promoting a user to admin
+
+Role assignment is never exposed through the public API. Promote via DB directly:
+
+```bash
+sqlite3 data/blog.db "UPDATE users SET role = 'admin' WHERE email = 'admin@example.com';"
+```
+
+The promoted user receives the updated role on their **next login** or **next token refresh** (access tokens reflect the DB role on refresh, max 15 min delay).
+
+### `src/constants/role.ts`
+
+Uses a `const` object instead of an `enum` — compatible with `erasableSyntaxOnly: true`:
+
+```typescript
+export const Role = {
+  ADMIN: 'admin',
+  USER: 'user'
+} as const;
+
+export type Role = (typeof Role)[keyof typeof Role];
+```
 
 ---
 
@@ -747,13 +851,14 @@ All errors follow a consistent JSON shape:
 
 | Scenario                   | Status | Message                                   |
 | -------------------------- | ------ | ----------------------------------------- |
-| Post not found             | `404`  | `Post not found`                          |
+| Post / User not found      | `404`  | `Post not found` / `User not found`       |
 | Invalid ID param           | `400`  | `Invalid post ID`                         |
 | Missing required field     | `400`  | `Validation failed` + `errors` map        |
 | Email already exists       | `400`  | `Email already exists`                    |
 | Invalid credentials        | `400`  | `Invalid credentials`                     |
 | Missing or invalid token   | `401`  | `Unauthorized — missing or invalid token` |
 | Invalid refresh token      | `400`  | `Invalid refresh token`                   |
+| Insufficient role          | `403`  | `Forbidden — requires one of: admin`      |
 | Invalid Idempotency-Key    | `400`  | `Invalid idempotency-key header...`       |
 | Rate limit exceeded        | `429`  | `Too many requests...`                    |
 | Route not found            | `404`  | `Route METHOD /path not found`            |
@@ -788,10 +893,11 @@ pnpm format:check  # Check formatting without writing
 Uses [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
-feat: add JWT authentication with passport-jwt
+feat: add role-based authorization with admin and user roles
+feat: add GET /users/me endpoint
 fix: handle legacy comma-separated tags format
 refactor: migrate raw SQL to TypeORM entities
-docs: update README with authentication section
+docs: update README with authorization section
 chore: add bcryptjs and passport dependencies
 ```
 

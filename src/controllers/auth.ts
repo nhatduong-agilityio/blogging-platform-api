@@ -29,10 +29,11 @@ export class AuthController {
       const result = registerSchema.safeParse(req.body);
       if (!result.success) throw handleZodError(result.error);
 
-      const user = await this.authService.register(
-        result.data.email,
-        result.data.password
-      );
+      const user = await this.authService.register({
+        email: result.data.email,
+        password: result.data.password,
+        role: result.data.role
+      });
 
       sendSuccessResponse(res, user, RESPONSE_STATUS_CODE.CREATED);
     } catch (err) {

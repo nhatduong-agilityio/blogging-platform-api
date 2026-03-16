@@ -3,13 +3,14 @@
 // Augments Express's Request type globally so req.user is typed
 // as JwtPayload throughout the entire app — no more casting inline.
 
-import type { JwtPayload } from './auth.js';
+import type { JwtPayload, UserRole } from './auth.js';
 
 declare global {
   namespace Express {
     interface User extends JwtPayload {
       userId: number;
       email: string;
+      role: UserRole;
     }
   }
 }

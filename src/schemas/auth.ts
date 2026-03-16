@@ -1,4 +1,5 @@
 import z from 'zod';
+import { ROLE } from '../constants/user.js';
 
 /**
  * Register Schema
@@ -8,7 +9,8 @@ export const registerSchema = z.object({
   password: z
     .string()
     .min(6, 'Password must be at least 6 characters')
-    .max(100, 'Password must be at most 100 characters')
+    .max(100, 'Password must be at most 100 characters'),
+  role: z.enum(ROLE).default(ROLE.USER)
 });
 
 /**
@@ -29,7 +31,6 @@ export const refreshTokenSchema = z.object({
 /**
  * Auth Types
  */
-export type RegisterSchema = z.infer<typeof registerSchema>;
 export type LoginSchema = z.infer<typeof loginSchema>;
 export type RefreshTokenSchema = z.infer<typeof refreshTokenSchema>;
 export type CreateUserSchema = z.infer<typeof registerSchema>;

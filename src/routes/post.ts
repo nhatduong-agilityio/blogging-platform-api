@@ -8,7 +8,8 @@ import type { IdempotencyKeyEntity } from '../entity/idempotency.js';
 // Middlewares
 import { idempotency } from '../middlewares/idempotency.js';
 import { writeLimiter } from '../middlewares/rate-limit.js';
-import { authMiddleware } from '../middlewares/auth.js';
+import { authMiddleware, authorizeMiddleware } from '../middlewares/auth.js';
+import { ROLE } from '../constants/user.js';
 
 /**
  * Creates a new Router instance with the given PostController and registers routes for:
@@ -26,21 +27,38 @@ export function createPostRoutes(
 ): Router {
   const router = Router();
 
-  router.get('/', controller.getAllPosts);
-  router.get('/:id', controller.getPostById);
-
-  // Write routes — rate limited + idempotency on POST
-  // PUT and DELETE are naturally idempotent by HTTP semantics,
-  // so idempotency middleware is only needed on POST (create).
+  // Admin-only write routes
+  // Middleware order matters:
+  //   1. authMiddleware   — verify JWT, set req.user
+  //   2. authorize(admin) — check req.user.role
+  //   3. writeLimiter     — rate limit after auth to avoid wasting quota
+  //   4. idempotency      — only on POST (PUT/DELETE naturally idempotent)
+  router.get('/', authMiddleware, controller.getAllPosts);
+  router.get('/:id', authMiddleware, controller.getPostById);
   router.post(
     '/',
     authMiddleware,
+    authorizeMiddleware(ROLE.ADMIN),
     writeLimiter,
     idempotency(repo),
     controller.createPost
   );
-  router.put('/:id', authMiddleware, writeLimiter, controller.updatePost);
-  router.delete('/:id', authMiddleware, writeLimiter, controller.deletePost);
+
+  router.put(
+    '/:id',
+    authMiddleware,
+    authorizeMiddleware(ROLE.ADMIN),
+    writeLimiter,
+    controller.updatePost
+  );
+
+  router.delete(
+    '/:id',
+    authMiddleware,
+    authorizeMiddleware(ROLE.ADMIN),
+    writeLimiter,
+    controller.deletePost
+  );
 
   return router;
 }

@@ -15,7 +15,8 @@ export class UserRepository
   protected override toDomain(entity: UserEntity): User {
     return {
       id: entity.id,
-      email: entity.email
+      email: entity.email,
+      role: entity.role
     };
   }
 
