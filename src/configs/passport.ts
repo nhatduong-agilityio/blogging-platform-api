@@ -35,14 +35,17 @@ export function configurePassport(userRepo: UserRepository): void {
               return done(new Error('User not found'), false);
             }
 
-            // Pass only the safe payload — never the full entity with password
+            // Include role from DB — DB is source of truth.
+            // If an admin is demoted, the next login will issue a token
+            // with the updated role. Existing tokens expire in 15 min.
             done(null, {
               userId: user.id,
-              email: user.email
+              email: user.email,
+              role: user.role
             } satisfies JwtPayload);
           })
           .catch(err => {
-            done(err, false);
+            done(err instanceof Error ? err : new Error(String(err)), false);
           });
       }
     )
