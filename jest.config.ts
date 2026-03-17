@@ -22,13 +22,9 @@ const config: Config = {
   clearMocks: true,
 
   collectCoverageFrom: [
-    'src/**/*.ts',
-    '!src/server.ts',
-    '!src/database/**',
-    '!src/entity/**',
-    '!src/migration/**',
-    '!src/types/**',
-    '!src/constants/**'
+    'src/services/**.ts',
+    'src/controllers/**.ts',
+    'src/middlewares/**.ts'
   ]
 
   // coverageThreshold: {
