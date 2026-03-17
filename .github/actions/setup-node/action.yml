@@ -1,0 +1,26 @@
+name: 'Setup Node.js and pnpm'
+description: 'Common setup steps: Node.js, pnpm install'
+inputs:
+  node-version:
+    description: 'Node.js version'
+    required: false
+    default: '24'
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: pnpm/action-setup@v4
+      name: Install pnpm
+      with:
+        version: 10
+        run_install: false
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'pnpm'
+
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
+      shell: bash

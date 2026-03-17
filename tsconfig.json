@@ -8,10 +8,6 @@
     /* JS */
     "lib": ["ES2022"],
 
-    /* Project structure */
-    "rootDir": "src",
-    "outDir": "dist",
-
     /* Strict production settings */
     "strict": true,
     "noUncheckedIndexedAccess": true,
@@ -21,12 +17,6 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-
-    /* Output */
-    "sourceMap": true,
-    "declaration": true,
-    "declarationMap": true,
-    "removeComments": false,
 
     /* Node */
     "types": ["node"],
