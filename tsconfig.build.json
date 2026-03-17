@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+
+  "compilerOptions": {
+    /* Project structure */
+    "rootDir": "src",
+    "outDir": "dist",
+
+    /* Output */
+    "sourceMap": true,
+    "declaration": true,
+    "declarationMap": true,
+    "removeComments": false
+  },
+
+  "exclude": [
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "jest.config.ts",
+    "node_modules",
+    "dist"
+  ]
+}
