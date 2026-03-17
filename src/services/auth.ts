@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 
 // Types
 import type { UserRepository } from '../repositories/user.js';
@@ -56,7 +57,21 @@ export class AuthService {
   }
 
   async refresh(refreshToken: string): Promise<{ accessToken: string }> {
-    const payload = verifyRefreshToken(refreshToken);
+    // verifyRefreshToken throws JsonWebTokenError / TokenExpiredError
+    // when the token is invalid or expired — convert to 400 AppError
+    // so the error handler returns the correct status code.
+    let payload;
+    try {
+      payload = verifyRefreshToken(refreshToken);
+    } catch (err) {
+      if (err instanceof jwt.TokenExpiredError) {
+        throw AppError.badRequest('Refresh token has expired');
+      }
+      if (err instanceof jwt.JsonWebTokenError) {
+        throw AppError.badRequest('Invalid refresh token');
+      }
+      throw err; // unexpected error — let the global handler catch it as 500
+    }
 
     const user = await this.userRepo.findByIdWithSensitiveData(payload.userId);
     if (!user || user.refreshToken !== refreshToken) {
