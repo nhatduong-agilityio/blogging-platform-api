@@ -35,13 +35,32 @@ export default tseslint.config(
     }
   },
 
+  // Relaxed rules for __tests__/ — test code has different patterns:
+  //   - jest.unstable_mockModule requires (jest as any) until Jest v30
+  //     types the API fully
+  //   - as unknown as SomeType is common for building mock objects
+  //   - explicit return types on test helpers are noisy, not valuable
+  //   - console.log is useful for debugging failing tests
+  {
+    files: ['**/__tests__/**/*.ts', '**/e2e/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/explicit-function-return-type': 'off',
+      'no-console': 'off'
+    }
+  },
+
   // Ignore built output and config files themselves
   {
     ignores: [
       'dist/**',
       'node_modules/**',
       'eslint.config.js',
-      'commitlint.config.js'
+      'commitlint.config.js',
+      'coverage'
     ]
   }
 );
